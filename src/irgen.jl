@@ -40,11 +40,6 @@ function genMod(@nospecialize(func), @nospecialize(tt))
     # BPF! BPF! BPF!
     triple!(mod, "bpf-bpf-bpf")
 
-    # FIXME: Remove me!
-    param_types = [LLVM.Int32Type()]
-    func_type = LLVM.FunctionType(LLVM.Int32Type(), param_types)
-    myextfunc = LLVM.Function(mod, "myextfunc", func_type)
-
     return mod, dependencies
 end
 

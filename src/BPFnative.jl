@@ -8,16 +8,16 @@ using InteractiveUtils
 const optlevel = Ref{Int}()
 
 function __init__()
+    # TODO: Do I need this?
     @assert LLVM.InitializeNativeTarget() == false
+    # TODO: Should this go elsewhere?
     InitializeBPFAsmPrinter()
+    # TODO: Can we just do -Os due to eBPF limitations?
     optlevel[] = Base.JLOptions().opt_level
-    #init_jit()
 end
 
-#include("cgutils.jl")
-#include("jit.jl")
-
 include("irgen.jl")
+include("helpers.jl")
 
 """
     analyze(func, tt, march = :SKL)
@@ -65,17 +65,14 @@ analyze(mysum, Tuple{Vector{Float64}})
 ```
 """
 function analyze(@nospecialize(func), @nospecialize(tt), optimize!::Core.Function = jloptimize!)
-    mktempdir() do dir
-        objfile = joinpath(dir, "a.out")
-        asmfile = joinpath(dir, "a.S")
-        mod, _ = irgen(func, tt)
-        target_machine(mod) do tm
-            optimize!(tm, mod)
-            LLVM.emit(tm, mod, LLVM.API.LLVMAssemblyFile, asmfile)
-            LLVM.emit(tm, mod, LLVM.API.LLVMObjectFile, objfile)
-        end
-        @show objfile
-        @show asmfile
+    dir = pwd()
+    objfile = joinpath(dir, "a.out")
+    asmfile = joinpath(dir, "a.S")
+    mod, _ = irgen(func, tt)
+    target_machine(mod) do tm
+        optimize!(tm, mod)
+        LLVM.emit(tm, mod, LLVM.API.LLVMAssemblyFile, asmfile)
+        LLVM.emit(tm, mod, LLVM.API.LLVMObjectFile, objfile)
     end
     return nothing
 end

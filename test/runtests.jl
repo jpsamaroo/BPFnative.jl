@@ -1,14 +1,22 @@
 using BPFnative
 #using Test
 
-# FIXME: Get `mod`
-#param_types = LLVMTypeRef[LLVMInt32Type()]
-#ret_type = LLVMFunctionType(LLVMInt32Type(), param_types, 1, 0)
-#_myextfunc = LLVMAddFunction(mod, "myextfunc", ret_type)
-
-function f(x)
-    return myextfunc(x)
+#=
+function g(x)
+    return nothing
 end
 
+#BPFnative.code_llvm(g, (Int32,))
+BPFnative.code_native(g, (Int32,))
+=#
+
+function f(x)
+    #a = x + 1
+    return BPFnative.myextfunc(Int32(2)*x+Int32(1))
+end
+
+@info "LLVM for f(x)"
 BPFnative.code_llvm(f, (Int32,))
+@info "BPF bytecode for f(x)"
 BPFnative.code_native(f, (Int32,))
+#BPFnative.analyze(f, (Int32,))
