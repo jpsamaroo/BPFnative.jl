@@ -43,7 +43,8 @@ function genMod(@nospecialize(func), @nospecialize(tt))
     return mod, dependencies
 end
 
-function irgen(@nospecialize(func), @nospecialize(tt))
+function irgen(@nospecialize(func), @nospecialize(tt);
+               section_name="prog", license="")
     mod, dependencies = genMod(func, tt)
 
     # the main module should contain a single jfptr_ function definition,
@@ -113,6 +114,25 @@ function irgen(@nospecialize(func), @nospecialize(tt))
     globalUnique[] += 1
     llvmfn *= "_$(globalUnique[])"
     LLVM.name!(entry, llvmfn)
+
+    # change the section name from .text to something else
+    LLVM.section!(entry, section_name)
+
+    # FIXME: add license section as global variable
+    #=
+    #gv = GlobalVariable(mod, LLVM.IntegerType(LLVM.API.LLVMInt64Type()), "license")
+    #initializer!(gv, "GPL")
+    #glob = LLVM.API.LLVMAddGlobal(mod, LLVM.API.LLVMArrayType(LLVM.API.LLVMInt8Type(), UInt32(7)), "license")
+    glob = GlobalVariable(mod, convert(LLVMType, Int8), "license")
+    @show typeof(glob)
+    # set as internal linkage and constant
+    #LLVM.API.LLVMSetLinkage(glob, LLVM.API.LLVMInternalLinkage)
+    linkage!(glob, LLVM.API.LLVMExternalLinkage)
+    #LLVM.API.LLVMSetGlobalConstant(glob, 1)
+    constant!(glob, true)
+    # Initialize with string
+    #initializer!(glob, LLVM.API.LLVMConstString("GPL", UInt32(3), Int32(1)))
+    =#
 
     return mod, entry
 end

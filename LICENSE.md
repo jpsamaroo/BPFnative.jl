@@ -1,4 +1,4 @@
-The MCAnalyzer.jl package is licensed under the MIT "Expat" License:
+The BPFnative.jl package is licensed under the MIT "Expat" License:
 
 > Copyright (c) 2019: Julian P Samaroo.
 >
@@ -20,3 +20,8 @@ The MCAnalyzer.jl package is licensed under the MIT "Expat" License:
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 >
+
+For BPF kernels generated with BPFnative.jl, please see the information in the
+FILTER_LICENSES.md file in this repository, which explains how generated
+kernels (and the user-provided source code that they are generated from) are
+licensed.
