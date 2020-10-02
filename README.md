@@ -1,17 +1,9 @@
 # BPFnative.jl
 
-## Instructions for use
-* Recompile Julia's LLVM with the appropriate line in deps/llvm.mk as such:
-  `LLVM_TARGETS := host;NVPTX;AMDGPU;BPF`
-* `] build LLVM` to rebuild LLVM
-* Run `bpfgen(io, license, f, tt)` to generate a BPF kernel with license
-  `license`, from function `f` with input types `tt`. The kernel's object file
-  (ELF format) will be written to `io`.
-* If your kernel is an XDP filter, load it on the appropriate interface with:
-  `ip link set dev myiface xdp obj mybpfkernel.o verbose`. `iproute2` will
-  output some information on your kernel, which is useful for debugging when
-  the Linux kernel refuses to load your kernel (this is common). When you're
-  done with that kernel, unload it with `ip link set dev myiface xdp off`.
+BPFnative provides the ability to write eBPF filters in Julia. Additionally,
+wrappers to the [libbpf](https://github.com/libbpf/libbpf) library are provided
+to make it easy to load eBPF programs into the Linux kernel in for a variety of
+use cases.
 
 ## Acknowledgments
 Thanks to @vchuravy for MCAnalyzer.jl, and @maleadt for CUDAnative.jl, both of
