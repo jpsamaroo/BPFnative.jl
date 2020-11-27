@@ -5,14 +5,34 @@ using InteractiveUtils
 using Libdl
 using GPUCompiler
 
-include("c_helpers.jl")
+# Host API
+module API
+include("common.jl")
 include("libbpf.jl")
-include("maps.jl")
+end
+
+# Runtime API
+module RT
+import ..API
+include("runtime_maps.jl")
+include("misc.jl")
+end
+
+# Host API
+module Host
+import ..API
+include("syscall.jl")
+include("host_maps.jl")
+end
+
+# Compiler
 include("compiler.jl")
-include("execution.jl")
 include("reflection.jl")
 
-# Some useful utilities
+# Easy-to-use probes
+include("probes.jl")
+
+# Useful utilities
 include("xdp.jl")
 
 end # module

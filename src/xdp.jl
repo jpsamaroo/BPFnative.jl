@@ -8,17 +8,9 @@ export xdp_load, xdp_unload
     XDP_REDIRECT
 end
 
-struct xdp_md
-    data::UInt32
-    data_end::UInt32
-    data_meta::UInt32
-    ingress_ifindex::UInt32
-    rx_queue_index::UInt32
-end
-
-function xdp_load(iface::String, mod::BPFModule)
+function xdp_load(iface::String, bpf::Vector{UInt8})
     mktemp() do path, io
-        write(io, mod.data)
+        write(io, bpf)
         flush(io)
         run(`ip link set $iface xdp obj $path verbose`)
     end

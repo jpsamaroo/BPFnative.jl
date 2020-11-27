@@ -1,5 +1,3 @@
-module API
-
 export BPFCmd, BPFMapType, BPFProgType, BPFAttachType, BPFHelper
 
 @enum BPFCmd begin
@@ -257,4 +255,35 @@ end
     sk_assign
 end
 
+## Perf/Ptrace
+
+# TODO: pt_regs for other architectures
+struct pt_regs
+    ebx::Clong
+    ecx::Clong
+    edx::Clong
+    esi::Clong
+    edi::Clong
+    ebp::Clong
+    eax::Clong
+    xds::Cint
+    xes::Cint
+    xfs::Cint
+    xgs::Cint
+    orig_eax::Clong
+    eip::Clong
+    xcs::Cint
+    eflags::Clong
+    esp::Clong
+    xss::Cint
+end
+
+## XDP
+
+struct xdp_md
+    data::UInt32
+    data_end::UInt32
+    data_meta::UInt32
+    ingress_ifindex::UInt32
+    rx_queue_index::UInt32
 end
