@@ -5,7 +5,11 @@ using InteractiveUtils
 using Libdl
 using GPUCompiler
 
-# Host API
+# ubpf VM
+using UBPF_jll
+include("ubpf.jl")
+
+# Common API
 module API
 include("common.jl")
 include("libbpf.jl")
