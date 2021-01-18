@@ -25,6 +25,15 @@ include("syscall.jl")
 include("host_maps.jl")
 end
 
+# Kernel Internal API
+module Kernel
+try
+    include(joinpath(@__DIR__, "..", "gen", "vmlinux.jl"))
+catch err
+    @warn "Failed to load Linux Kernel definitions: $err"
+end
+end
+
 # Compiler
 include("compiler.jl")
 include("reflection.jl")

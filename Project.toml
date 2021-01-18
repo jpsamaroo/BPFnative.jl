@@ -4,12 +4,14 @@ authors = ["Julian P Samaroo <jpsamaroo@jpsamaroo.me>"]
 version = "0.1.0"
 
 [deps]
+Clang = "40e3b903-d033-50b4-a0cc-940c62c95e31"
 GPUCompiler = "61eb1bfa-7361-4325-ad38-22787b887f55"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 
 [compat]
+Clang = "0.12.1"
 GPUCompiler = "0.9.1"
 LLVM = "3.4"
 julia = "1.6"
