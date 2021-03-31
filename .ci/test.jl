@@ -8,4 +8,8 @@ bpfnative = Pkg.PackageSpec(path = root_directory)
 Pkg.develop(bpfnative)
 Pkg.build()
 Pkg.precompile()
+if Sys.islinux()
 Pkg.test("BPFnative")
+else
+import BPFnative
+end
