@@ -7,6 +7,11 @@ using GPUCompiler
 
 # Host API
 module API
+if !parse(Bool, get(ENV, "JULIA_BPFNATIVE_DISABLE_ARTIFACTS", "0"))
+    using Libbpf_jll
+else
+    const libbpf = "libbpf"
+end
 include("common.jl")
 include("libbpf.jl")
 end
