@@ -255,6 +255,15 @@ end
     sk_assign
 end
 
+# Kernel structures
+
+if has_vmlinux
+const pt_regs = c".VMLinux.struct pt_regs"
+pointertype(::Type{pt_regs}) = Cptr{pt_regs}
+const xdp_md = c".VMLinux.struct xdp_md"
+pointertype(::Type{xdp_md}) = Cptr{xdp_md}
+else
+
 ## Perf/Ptrace
 
 # TODO: pt_regs for other architectures
@@ -277,6 +286,7 @@ struct pt_regs
     esp::Clong
     xss::Cint
 end
+pointertype(::Type{pt_regs}) = Ptr{pt_regs}
 
 ## XDP
 
@@ -286,4 +296,6 @@ struct xdp_md
     data_meta::UInt32
     ingress_ifindex::UInt32
     rx_queue_index::UInt32
+end
+pointertype(::Type{xdp_md}) = Ptr{xdp_md}
 end
