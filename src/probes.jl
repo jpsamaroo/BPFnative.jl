@@ -9,8 +9,8 @@ struct KProbe <: AbstractProbe
     kfunc::String
     retprobe::Bool
 end
-function KProbe(f::Function, kfunc; retprobe=false)
-    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false))
+function KProbe(f::Function, kfunc; retprobe=false, kwargs...)
+    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false, kwargs...))
     foreach(prog->API.set_kprobe!(prog), API.programs(obj))
     KProbe(obj, kfunc, retprobe)
 end
@@ -20,8 +20,8 @@ struct UProbe{F<:Function,T} <: AbstractProbe
     sig::T
     retprobe::Bool
 end
-function UProbe(f::Function, method, sig; retprobe=false)
-    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false))
+function UProbe(f::Function, method, sig; retprobe=false, kwargs...)
+    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false, kwargs...))
     #foreach(prog->API.set_uprobe!(prog), API.programs(obj))
     foreach(prog->API.set_kprobe!(prog), API.programs(obj))
     UProbe(obj, method, sig, retprobe)
@@ -31,18 +31,18 @@ struct Tracepoint <: AbstractProbe
     category::String
     name::String
 end
-function Tracepoint(f::Function, category, name)
-    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false))
+function Tracepoint(f::Function, category, name; kwargs...)
+    obj = API.Object(bpffunction(f, Tuple{API.pointertype(API.pt_regs)}; btf=false, kwargs...))
     foreach(prog->API.set_tracepoint!(prog), API.programs(obj))
     Tracepoint(obj, category, name)
 end
 
 Base.show(io::IO, p::KProbe) =
-    print(io, "KProbe ($(p.kfunc)")
+    print(io, "KProbe ($(p.kfunc))")
 Base.show(io::IO, p::UProbe) =
     print(io, "UProbe ($(p.func)($(p.sig)))")
 Base.show(io::IO, p::Tracepoint) =
-    print(io, "Tracepoint ($(p.category)/$(p.name)")
+    print(io, "Tracepoint ($(p.category)/$(p.name))")
 
 function API.load(p::KProbe)
     API.load(p.obj)
