@@ -14,7 +14,7 @@ for method in (:code_typed, :code_warntype, :code_llvm, :code_native)
         function $method(io::IO, @nospecialize(func), @nospecialize(types);
                          kernel::Bool=false, kwargs...)
             source = FunctionSpec(func, Base.to_tuple_type(types), kernel)
-            target = BPFCompilerTarget(; dev_isa=default_isa(default_device()))
+            target = BPFCompilerTarget()
             params = BPFCompilerParams()
             job = CompilerJob(target, source, params)
             GPUCompiler.$method($(args...); kwargs...)

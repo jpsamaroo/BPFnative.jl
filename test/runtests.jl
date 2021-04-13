@@ -28,7 +28,7 @@ using InteractiveUtils
         function kernel(x)
             return 0
         end
-        asm = String(bpffunction(kernel, Tuple{Int}; format=:asm, license="abc", btf=false))
+        asm = String(bpffunction(kernel, Tuple{Int}; format=:asm, license="abc"))
         @test occursin(".section\tlicense,", asm)
         @test occursin("_license,@object", asm)
         @test occursin(".asciz\t\"abc\"", asm)
@@ -64,6 +64,35 @@ using InteractiveUtils
                 @test occursin("mymap ll", asm)
                 @test count("mymap,@object", asm) == 1
             end
+        end
+    end
+    @testset "buffers/strings" begin
+        @testset "buffer: simple" begin
+            function kernel(x)
+                buf = RT.create_buffer(4)
+                RT.trace_printk(buf)
+            end
+            asm = String(bpffunction(kernel, Tuple{Int}; format=:asm))
+            @test !occursin("gpu_gc_pool_alloc", asm)
+        end
+        @testset "string: simple" begin
+            function kernel(x)
+                str = RT.@create_string("hello!")
+                RT.trace_printk(str)
+            end
+            asm = String(bpffunction(kernel, Tuple{Int}; format=:asm))
+            @test !occursin("gpu_gc_pool_alloc", asm)
+        end
+        @testset "divergent execution" begin
+            function kernel(x)
+                if x > 1
+                    RT.trace_printk(RT.@create_string("Greater"))
+                else
+                    RT.trace_printk(RT.@create_string("Lesser"))
+                end
+            end
+            asm = String(bpffunction(kernel, Tuple{Int}; format=:asm))
+            # TODO: Test that allocas sit in top of first block
         end
     end
 end
@@ -118,6 +147,7 @@ if run_root_tests
                 API.unload(kp)
             end
         end
+        @test_skip "uprobe"
         #= FIXME
         @testset "uprobe" begin
             up = UProbe(+, Tuple{Int,Int}) do regs
@@ -184,6 +214,74 @@ if run_root_tests
             hmap = Host.hostmap(map; K=UInt32, V=UInt32)
             run(`sh -c "echo 123 >/dev/null"`)
             @test hmap[1] == 42
+        end
+    end
+    @testset "helpers" begin
+        # XXX: The below helper kernels are marked as GPL for the purpose of
+        # testing that the helper works as expected, however they are still
+        # licensed according to the MIT license. If you actually use GPL-only
+        # helpers in your kernels, make sure you adhere to the GPL license!
+        @test_skip "probe_read"
+        @testset "ktime_get_ns" begin
+            kp = KProbe("ksys_write"; license="GPL") do x
+                mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=UInt32, valuetype=UInt64)
+                mymap[1] = RT.ktime_get_ns()
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                hmap = Host.hostmap(map; K=UInt32, V=UInt32)
+                run(`sh -c "echo 123 >/dev/null"`)
+                old = hmap[1]
+                run(`sh -c "echo 123 >/dev/null"`)
+                @test hmap[1] > old
+            end
+        end
+        @testset "trace_printk" begin
+            kp = KProbe("ksys_write"; license="GPL") do x
+                y = 1234
+                z = RT.@create_string("1234")
+                RT.trace_printk(RT.@create_string("%d==%s"), y, z)
+                0
+            end
+            API.load(kp) do
+                run(`sh -c "echo 123 >/dev/null"`)
+                run(`grep -q -m 1 '1234==1234' /sys/kernel/debug/tracing/trace_pipe`)
+            end
+        end
+        @testset "get_prandom_u32" begin
+            kp = KProbe("ksys_write"; license="GPL") do x
+                mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=UInt32, valuetype=UInt32)
+                mymap[1] = RT.get_prandom_u32()
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                hmap = Host.hostmap(map; K=UInt32, V=UInt32)
+                run(`sh -c "echo 123 >/dev/null"`)
+                old = hmap[1]
+                run(`sh -c "echo 123 >/dev/null"`)
+                @test hmap[1] != old
+            end
+        end
+        @testset "get_smp_processor_id" begin
+            @eval const CPU_THREADS = Sys.CPU_THREADS # Sys.CPU_THREADS is not const
+            kp = KProbe("ksys_write"; license="GPL") do x
+                mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=UInt32, valuetype=UInt32, maxentries=CPU_THREADS+1)
+                mymap[RT.get_smp_processor_id()+1] = 1
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                hmap = Host.hostmap(map; K=UInt32, V=UInt32)
+                for i in 1:100
+                    run(`sh -c "echo 123 >/dev/null"`)
+                end
+                for idx in 1:Sys.CPU_THREADS
+                    @test hmap[idx] == 1
+                end
+                @test !haskey(hmap, Sys.CPU_THREADS+1)
+            end
         end
     end
 end

@@ -53,15 +53,17 @@ end
 # Runtime API
 module RT
 import ..API
-include("runtime_maps.jl")
-include("misc.jl")
+include("runtime/bpfcall.jl")
+include("runtime/maps.jl")
+include("runtime/buffers.jl")
+include("runtime/helpers.jl")
 end
 
 # Host API
 module Host
 import ..API
-include("syscall.jl")
-include("host_maps.jl")
+include("host/syscall.jl")
+include("host/maps.jl")
 end
 
 # Compiler

@@ -39,15 +39,13 @@ function map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,
 end
 function _genmap!(mod::LLVM.Module, ::Type{<:RTMap{Name,MT,K,V,ME,F}}, ctx) where {Name,MT,K,V,ME,F}
     T_i32 = LLVM.Int32Type(ctx)
-    T_map = LLVM.StructType([T_i32, T_i32, T_i32, T_i32, T_i32])
+    T_map = LLVM.StructType([T_i32, T_i32, T_i32, T_i32, T_i32], ctx)
     name = string(Name)
     gv = GlobalVariable(mod, T_map, name)
     section!(gv, "maps")
     alignment!(gv, 4)
     vec = Any[Int32(MT),Int32(sizeof(K)),Int32(sizeof(V)),Int32(ME),Int32(F)]
-    A_vec = [ConstantInt(v, ctx) for v in vec]
-    init = LLVM.API.LLVMConstStruct(A_vec, length(A_vec), 0)
-    init = ConstantStruct(init)
+    init = ConstantStruct([ConstantInt(v, ctx) for v in vec], ctx)
     initializer!(gv, init)
     linkage!(gv, LLVM.API.LLVMLinkOnceODRLinkage)
     return gv
