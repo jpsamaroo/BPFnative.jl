@@ -116,7 +116,7 @@ function Base.delete!(map::AbstractHashMap{K,V}, idx) where {K,V}
     map
 end
 
-function Base.haskey(map::AbstractHashMap{K,V}, idx) where {K,V}
+function Base.haskey(map::HostMap{K,V}, idx) where {K,V}
     key = Ref{K}(idx)
     value = Ref{V}()
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
