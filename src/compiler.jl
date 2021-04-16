@@ -39,7 +39,7 @@ const bpffunction_cache = Dict{UInt,Any}()
 
 # actual compilation
 function bpffunction_compile(source::FunctionSpec; format=:obj, license="",
-                             prog_section="prog", btf=false, kwargs...)
+                             prog_section="prog", btf=true, kwargs...)
     # compile to BPF
     target = BPFCompilerTarget(; license, prog_section)
     params = BPFCompilerParams()
