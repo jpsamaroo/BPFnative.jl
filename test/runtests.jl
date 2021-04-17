@@ -54,11 +54,13 @@ using InteractiveUtils
     @testset "map indexing" begin
         for K in map_types, V in map_types
             @testset "map[$K] = $V" begin
-                mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_HASH, keytype=K, valuetype=V, maxentries=1)
-                oK, oV = one(K), one(V)
-                function kernel(x)
-                    mymap[oK] = oV
-                    return 0
+                k = @eval begin
+                    function kernel(x)
+                        mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_HASH, keytype=$K, valuetype=$V, maxentries=1)
+                        oK, oV = $(one(K)), $(one(V))
+                        mymap[oK] = oV
+                        return 0
+                    end
                 end
                 asm = String(bpffunction(kernel, Tuple{Int}; format=:asm))
                 @test occursin("mymap ll", asm)
