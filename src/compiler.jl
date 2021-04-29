@@ -2,7 +2,12 @@ export bpffunction, bpfasm
 
 # Compilation support
 
-struct BPFCompilerParams <: AbstractCompilerParams end
+Base.@kwdef struct BPFCompilerParams <: AbstractCompilerParams
+    format::Symbol = :obj
+    license::String = ""
+    prog_section::String = "prog"
+    btf::Bool = true
+end
 
 BPFCompilerJob = CompilerJob{BPFCompilerTarget,BPFCompilerParams}
 
@@ -29,44 +34,51 @@ keyword arguments are provided.
 """
 function bpffunction(f::Core.Function, tt::Type=Tuple{}; name=nothing, kwargs...)
     source = FunctionSpec(f, tt, false, name)
-    GPUCompiler.cached_compilation(bpffunction_cache,
+    target = BPFCompilerTarget()
+    params = BPFCompilerParams(; kwargs...)
+    job = CompilerJob(target, source, params)
+    GPUCompiler.cached_compilation(bpffunction_cache, job,
                                    bpffunction_compile,
-                                   bpffunction_link,
-                                   source; kwargs...)
+                                   bpffunction_link)
 end
 
 const bpffunction_cache = Dict{UInt,Any}()
 
 # actual compilation
-function bpffunction_compile(source::FunctionSpec; format=:obj, license="",
-                             prog_section="prog", btf=true, kwargs...)
+function bpffunction_compile(@nospecialize(job::CompilerJob))
+    params = job.params
+    format = params.format
+    btf = params.btf
+
     # compile to BPF
-    target = BPFCompilerTarget(; license, prog_section)
-    params = BPFCompilerParams()
-    job = CompilerJob(target, source, params)
-    args = GPUCompiler.compile(format, job; validate=true, libraries=false, strip=!btf)
-    format == :llvm && return collect.(codeunits.(string.(args))) # TODO: Make more efficient
-    return collect(codeunits(args[1]))
+    method_instance, world = GPUCompiler.emit_julia(job)
+    ir, kernel = GPUCompiler.emit_llvm(job, method_instance, world; libraries=false)
+    if format == :llvm
+        return collect.(codeunits.(string.((ir, kernel)))) # TODO: Make more efficient
+    elseif format == :asm
+        format = LLVM.API.LLVMAssemblyFile
+    elseif format == :obj
+        format = LLVM.API.LLVMObjectFile
+    end
+    code = GPUCompiler.emit_asm(job, ir, kernel; format=format, validate=true, strip=!btf)
+    return collect(codeunits(code))
 end
-bpffunction_link(@nospecialize(source::FunctionSpec), exe; kwargs...) = exe
+bpffunction_link(@nospecialize(job::CompilerJob), exe) = exe
 
 function GPUCompiler.finish_module!(job::BPFCompilerJob, mod::LLVM.Module)
-    #= TODO: Fix upstream and re-enable if needed
-    invoke(GPUCompiler.finish_module!,
-           Tuple{CompilerJob{BPFCompilerTarget}, LLVM.Module},
-           job, mod)
-    =#
+    params = job.params
+    license = params.license
+    prog_section = params.prog_section
 
     for func in LLVM.functions(mod)
         if LLVM.name(func) == "gpu_signal_exception"
             throw(GPUCompiler.KernelError(job, "eBPF does not support exceptions"))
         end
         # Set entry section for loaders like libbpf
-        LLVM.section!(func, job.target.prog_section)
+        LLVM.section!(func, prog_section)
     end
 
     # Set license
-    license = job.target.license
     if license != ""
         ctx = LLVM.context(mod)
         i8 = LLVM.Int8Type(ctx)

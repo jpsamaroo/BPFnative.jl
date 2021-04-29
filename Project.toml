@@ -14,7 +14,7 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 
 [compat]
 CBinding = "1"
-GPUCompiler = "0.9.1"
+GPUCompiler = "0.11"
 LLVM = "3.6"
 Libbpf_jll = "0.3"
 Preferences = "1"
