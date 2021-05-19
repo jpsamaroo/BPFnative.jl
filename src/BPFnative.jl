@@ -58,7 +58,9 @@ macro offsetof(T, field)
 end
 include("common.jl")
 include("libbpf.jl")
+if Sys.islinux()
 include("network.jl")
+end
 end
 
 # Runtime API
