@@ -38,16 +38,27 @@ else
     const libbpf = "libbpf"
 end
 import ..BPFnative: has_vmlinux
+import ..CBinding
+import ..CBinding: @c_str, Cptr
 if has_vmlinux
-    import ..CBinding: @c_str, Cptr
     import ..VMLinux
-else
-    macro c_str(str)
-    str
+end
+@generated function offsetof(::Type{T}, ::Val{_field}) where {T<:CBinding.Cstruct,_field}
+    offset = -1
+    for field in CBinding.fields(T).parameters
+        if field.parameters[1] == _field
+            offset = field.parameters[2].parameters[4]
+        end
     end
+    @assert offset >= 0 "Failed to find offset of $_field in $T"
+    :($offset)
+end
+macro offsetof(T, field)
+    :($offsetof($T, Val($field)))
 end
 include("common.jl")
 include("libbpf.jl")
+include("network.jl")
 end
 
 # Runtime API
@@ -57,6 +68,7 @@ include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
 include("runtime/buffers.jl")
 include("runtime/helpers.jl")
+include("runtime/intrinsics.jl")
 end
 
 # Host API
@@ -64,6 +76,7 @@ module Host
 import ..API
 include("host/syscall.jl")
 include("host/maps.jl")
+include("host/socket.jl")
 end
 
 # Compiler

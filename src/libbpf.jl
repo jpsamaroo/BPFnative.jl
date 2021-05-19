@@ -178,6 +178,9 @@ end
 function type(prog::Program)
     BPFProgType(ccall((:bpf_program__get_type, libbpf), Cint, (bpf_program,), prog[]))
 end
+function set_socket_filter!(prog::Program)
+    @assert ccall((:bpf_program__set_socket_filter, libbpf), Cint, (bpf_program,), prog[]) == 0;
+end
 function set_xdp!(prog::Program)
     @assert ccall((:bpf_program__set_xdp, libbpf), Cint, (bpf_program,), prog[]) == 0;
 end

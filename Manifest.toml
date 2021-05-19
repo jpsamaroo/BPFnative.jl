@@ -66,11 +66,16 @@ git-tree-sha1 = "76cbf1134983cfb371ad77117bb2659600ed64d6"
 uuid = "ab5a07f8-06af-567f-a878-e8bb879eba5a"
 version = "0.179.0+0"
 
+[[ExprTools]]
+git-tree-sha1 = "10407a39b87f29d47ebaca8edbc75d7c302ff93e"
+uuid = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
+version = "0.1.3"
+
 [[GPUCompiler]]
-deps = ["DataStructures", "InteractiveUtils", "LLVM", "Libdl", "Logging", "Scratch", "Serialization", "TimerOutputs", "UUIDs"]
-git-tree-sha1 = "48b77713d172107d2da557e39971cb6682ae0f83"
+deps = ["DataStructures", "ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "Scratch", "Serialization", "TimerOutputs", "UUIDs"]
+git-tree-sha1 = "7f13030524614d90c876332c980fd1edef2331e8"
 uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
-version = "0.9.2"
+version = "0.11.3"
 
 [[InteractiveUtils]]
 deps = ["Markdown"]
