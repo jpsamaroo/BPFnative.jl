@@ -202,6 +202,7 @@ end
 end
 run_root_tests = parse(Bool, get(ENV, "BPFNATIVE_ROOT_TESTS", "0"))
 if run_root_tests
+    test_file, test_io = mktemp(;cleanup=true)
     @info "Running root-only tests"
     @testset "probes" begin
         @testset "kprobe" begin
@@ -283,7 +284,7 @@ if run_root_tests
         API.load(kp) do
             map = first(API.maps(kp.obj))
             hmap = Host.hostmap(map; K=UInt32, V=UInt32)
-            run(`sh -c "echo 123 >/dev/null"`)
+            write(test_io, "1"); flush(test_io)
             @test hmap[1] == 42
         end
     end
@@ -302,9 +303,9 @@ if run_root_tests
             API.load(kp) do
                 map = first(API.maps(kp.obj))
                 hmap = Host.hostmap(map; K=UInt32, V=UInt32)
-                run(`sh -c "echo 123 >/dev/null"`)
+                write(test_io, "1"); flush(test_io)
                 old = hmap[1]
-                run(`sh -c "echo 123 >/dev/null"`)
+                write(test_io, "1"); flush(test_io)
                 @test hmap[1] > old
             end
         end
@@ -316,7 +317,7 @@ if run_root_tests
                 0
             end
             API.load(kp) do
-                run(`sh -c "echo 123 >/dev/null"`)
+                write(test_io, "1"); flush(test_io)
                 run(`grep -q -m 1 '1234==1234' /sys/kernel/debug/tracing/trace_pipe`)
             end
         end
@@ -329,9 +330,9 @@ if run_root_tests
             API.load(kp) do
                 map = first(API.maps(kp.obj))
                 hmap = Host.hostmap(map; K=UInt32, V=UInt32)
-                run(`sh -c "echo 123 >/dev/null"`)
+                write(test_io, "1"); flush(test_io)
                 old = hmap[1]
-                run(`sh -c "echo 123 >/dev/null"`)
+                write(test_io, "1"); flush(test_io)
                 @test hmap[1] != old
             end
         end
@@ -346,11 +347,15 @@ if run_root_tests
                 map = first(API.maps(kp.obj))
                 hmap = Host.hostmap(map; K=UInt32, V=UInt32)
                 for i in 1:100
-                    run(`sh -c "echo 123 >/dev/null"`)
+                    write(test_io, "1"); flush(test_io)
                 end
+                was_set = false
                 for idx in 1:Sys.CPU_THREADS
-                    @test hmap[idx] == 1
+                    if hmap[idx] == 1
+                        was_set = true
+                    end
                 end
+                @test was_set
                 @test !haskey(hmap, Sys.CPU_THREADS+1)
             end
         end
@@ -412,6 +417,39 @@ if run_root_tests
                 end
             finally
                 run(`ip link del dev jlbpf_test`)
+            end
+        end
+        @testset "get_current_pid_tgid" begin
+            kp = KProbe("ksys_write") do x
+                mymap = RT.RTMap(;name="mymap",maptype=API.BPF_MAP_TYPE_HASH,keytype=UInt32,valuetype=UInt32,maxentries=2)
+                pid, tgid = RT.get_current_pid_tgid()
+                mymap[1] = pid
+                mymap[2] = tgid
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                hmap = Host.hostmap(map; K=UInt32, V=UInt32)
+                write(test_io, "1"); flush(test_io)
+                @test hmap[1] > 0
+                @test hmap[2] > 0
+            end
+        end
+        @testset "get_current_uid_gid" begin
+            kp = KProbe("ksys_write") do x
+                mymap = RT.RTMap(;name="mymap",maptype=API.BPF_MAP_TYPE_HASH,keytype=UInt32,valuetype=UInt32,maxentries=2)
+                uid, gid = RT.get_current_uid_gid()
+                mymap[1] = uid
+                mymap[2] = gid
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                hmap = Host.hostmap(map; K=UInt32, V=UInt32)
+                write(test_io, "1"); flush(test_io)
+                # TODO: How do we test this well?
+                @test haskey(hmap, 1)
+                @test haskey(hmap, 2)
             end
         end
     end
