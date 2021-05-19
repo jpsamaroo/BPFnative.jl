@@ -258,10 +258,16 @@ end
 # Kernel structures
 
 if has_vmlinux
+
 const pt_regs = c".VMLinux.struct pt_regs"
 pointertype(::Type{pt_regs}) = Cptr{pt_regs}
+
 const xdp_md = c".VMLinux.struct xdp_md"
 pointertype(::Type{xdp_md}) = Cptr{xdp_md}
+
+const sk_buff = c".VMLinux.struct sk_buff"
+pointertype(::Type{sk_buff}) = Cptr{sk_buff}
+
 else
 
 ## Perf/Ptrace
@@ -298,4 +304,45 @@ struct xdp_md
     rx_queue_index::UInt32
 end
 pointertype(::Type{xdp_md}) = Ptr{xdp_md}
+
+## Sockets/TC
+
+struct sk_buff
+    len::UInt32
+    pkt_type::UInt32
+    mark::UInt32
+    queue_mapping::UInt32
+    protocol::UInt32
+    vlan_present::UInt32
+    vlan_tci::UInt32
+    vlan_proto::UInt32
+    priority::UInt32
+    ingress_ifindex::UInt32
+    ifindex::UInt32
+    tc_index::UInt32
+    cb::NTuple{5,UInt32}
+    hash::UInt32
+    tc_classid::UInt32
+    data::UInt32
+    data_end::UInt32
+    napi_id::UInt32
+
+    family::UInt32
+    remote_ip4::UInt32           # Stored in network byte order
+    local_ip4::UInt32            # Stored in network byte order
+    remote_ip6::NTuple{4,UInt32} # Stored in network byte order
+    local_ip6::NTuple{4,UInt32}  # Stored in network byte order
+    remote_port::UInt32          # Stored in network byte order
+    local_port::UInt32           # Stored in host byte order
+
+    data_meta::UInt32
+    flow_keys::Ptr{Cvoid} #__bpf_md_ptr(struct bpf_flow_keys *, flow_keys);
+    tstamp::UInt64
+    wire_len::UInt32
+    gso_segs::UInt32
+    sk::Ptr{Cvoid} #__bpf_md_ptr(struct bpf_sock *, sk);
+    gso_size::UInt32
+end
+pointertype(::Type{sk_buff}) = Ptr{sk_buff}
+
 end

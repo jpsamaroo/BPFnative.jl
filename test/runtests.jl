@@ -1,5 +1,6 @@
 using BPFnative
 import BPFnative: API, RT, Host
+using Sockets
 using Test
 
 # Useful for debugging libbpf loader failures
@@ -130,6 +131,74 @@ end
         API.set_kprobe!(prog)
         @test API.type(prog) == API.BPF_PROG_TYPE_KPROBE
     end
+end
+@testset "sockets" begin
+    srv = listen(4789)
+    chan = Channel{Int}()
+    function open_socks(srv, port)
+        s_sock = @async accept(srv)
+        c_sock = connect(port)
+        s_sock = fetch(s_sock)
+        s_sock, c_sock
+    end
+    @testset "attach" begin
+        s_sock, c_sock = open_socks(srv, 4789)
+        write(s_sock, 1)
+        @test read(c_sock, Int) == 1
+        dummy_filter(ctx) = 64
+        bytecode = bpffunction(dummy_filter, Tuple{Ptr{Cvoid}}; btf=false, prog_section="socket_filter")
+        obj = API.Object(bytecode)
+        API.load(obj)
+        filt = API.fd(first(API.programs(obj)))
+        @test Host.setsockopt(c_sock, Host.SOL_SOCKET, Host.SO_ATTACH_BPF, filt) == 0
+        @test Host.getsockopt(c_sock, Host.SOL_SOCKET, Host.SO_PROTOCOL, UInt64) == API.Network.IPPROTO_TCP
+        write(s_sock, 1)
+        @test read(c_sock, Int) == 1
+        @test Host.setsockopt(c_sock, Host.SOL_SOCKET, Host.SO_DETACH_BPF, filt) == 0
+        close(s_sock)
+        close(c_sock)
+    end
+    @testset "packet counting" begin
+        s_sock, c_sock = open_socks(srv, 4789)
+        function count_filter(ctx)
+            mymap = RT.RTMap(name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=Int32, valuetype=UInt8, maxentries=1)
+            mymap[1] = something(mymap[1], 0) + 1
+            255
+        end
+        bytecode = bpffunction(count_filter, Tuple{Ptr{Cvoid}}; btf=false, prog_section="socket_filter")
+        obj = API.Object(bytecode)
+        API.load(obj)
+        filt = API.fd(first(API.programs(obj)))
+        Host.setsockopt(c_sock, Host.SOL_SOCKET, Host.SO_ATTACH_BPF, filt)
+        write(s_sock, 1)
+        read(c_sock, UInt8)
+        hmap = Host.hostmap(first(API.maps(obj)); K=Int32, V=UInt8)
+        @test hmap[1] > 0
+        close(s_sock)
+        close(c_sock)
+    end
+    @testset "packet reading" begin
+        s_sock, c_sock = open_socks(srv, 4789)
+        function modify_filter(ctx)
+            mymap = RT.RTMap(name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=Int32, valuetype=UInt8, maxentries=1)
+            doff = RT.load_byte(ctx, API.@offsetof(API.Network.tcphdr, :doff))
+            doff = (doff >> 4) * 4
+            mymap[1] = RT.load_byte(ctx, doff)
+            255
+        end
+        bytecode = bpffunction(modify_filter, Tuple{API.pointertype(API.sk_buff)}; btf=false, prog_section="socket_filter")
+        obj = API.Object(bytecode)
+        API.load(obj)
+        filt = API.fd(first(API.programs(obj)))
+        Host.setsockopt(c_sock, Host.SOL_SOCKET, Host.SO_ATTACH_BPF, filt)
+        write(s_sock, 0x42)
+        read(c_sock, UInt8)
+        hmap = Host.hostmap(first(API.maps(obj)); K=Int32, V=UInt8)
+        @test hmap[1] == 0x42
+        close(s_sock)
+        close(c_sock)
+    end
+    close(srv)
 end
 run_root_tests = parse(Bool, get(ENV, "BPFNATIVE_ROOT_TESTS", "0"))
 if run_root_tests
@@ -283,6 +352,66 @@ if run_root_tests
                     @test hmap[idx] == 1
                 end
                 @test !haskey(hmap, Sys.CPU_THREADS+1)
+            end
+        end
+        @testset "skb_store_bytes and (l3/l4)_csum_replace" begin
+            function kernel(ctx)
+                eth_hdr = API.Network.@ETH_HLEN()
+                ver = (RT.load_byte(ctx, eth_hdr) & 0xF0) >> 4
+                ihl = (RT.load_byte(ctx, eth_hdr) & 0xF)
+                if (ver != 4) || (ihl > 5)
+                    return 0
+                end
+                ip_proto = RT.load_byte(ctx, eth_hdr + API.@offsetof(API.Network.iphdr, :protocol))
+                if ip_proto != API.Network.IPPROTO_TCP
+                    return 0
+                end
+                ip_hdr = eth_hdr + sizeof(API.Network.iphdr)
+                doff = RT.load_byte(ctx, ip_hdr + API.@offsetof(API.Network.tcphdr, :doff))
+                doff = (doff >> 4) * 4
+                doff += ip_hdr
+                oldbyte = RT.load_byte(ctx, doff)
+                if oldbyte != 0x1
+                    return 0
+                end
+                newbyte = 0x2
+                ret = RT.skb_store_bytes(ctx, doff, newbyte, sizeof(newbyte), 0)
+                if ret < 0
+                    RT.trace_printk(RT.@create_string("Store failed: %d"), ret)
+                    return 2
+                end
+                0
+            end
+            str = bpffunction(kernel, Tuple{API.pointertype(API.sk_buff)}; prog_section="classifier", license="GPL")
+            path, io = mktemp(;cleanup=true)
+            write(io, str); flush(io)
+            run(`ip link add name jlbpf_test type veth peer name jlbpf_test2`)
+            try
+                run(`ip link set jlbpf_test up`)
+                run(`ip netns add jlbpf_ns`)
+                try
+                    run(`ip link set jlbpf_test2 netns jlbpf_ns`)
+                    run(`ip netns exec jlbpf_ns ip addr add 10.45.98.2/24 dev jlbpf_test2`)
+                    run(`ip netns exec jlbpf_ns ip link set jlbpf_test2 up`)
+                    run(`ip addr add 10.45.98.1/24 dev jlbpf_test`)
+                    run(`ip netns exec jlbpf_ns ip route add default via 10.45.98.1`)
+                    run(`ip netns exec jlbpf_ns tc qdisc add dev jlbpf_test2 clsact`)
+                    run(`ip netns exec jlbpf_ns tc filter add dev jlbpf_test2 ingress bpf da obj $path`)
+                    jl = run(`ip netns exec jlbpf_ns $(unsafe_string(Base.JLOptions().julia_bin)) -e 'using Sockets;l=listen(IPv4("10.45.98.2"),8765);s=accept(l);write(s,read(s,UInt8))'`; wait=false)
+                    sleep(1)
+                    try
+                        sock = connect("10.45.98.2", 8765)
+                        write(sock, 0x1)
+                        @test read(sock, UInt8) == 0x2
+                    catch err
+                        kill(jl)
+                        rethrow(err)
+                    end
+                finally
+                    run(`ip netns del jlbpf_ns`)
+                end
+            finally
+                run(`ip link del dev jlbpf_test`)
             end
         end
     end

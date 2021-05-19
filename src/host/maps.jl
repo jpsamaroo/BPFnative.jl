@@ -33,7 +33,7 @@ function HostMap(; map_type, key_type, value_type, max_entries)
                                sizeof(value_type),
                                max_entries))
     fd = bpf(API.BPF_MAP_CREATE, attr)
-    @assert fd > 0 "Map creation failed"
+    fd > 0 || Base.systemerror(fd)
     jltype = maptype_to_jltype(Val(map_type))
     jltype{key_type,value_type}(fd)
 end
@@ -54,9 +54,10 @@ function Base.getindex(map::AbstractHashMap{K,V}, idx) where {K,V}
                                     key_ptr,
                                     value_ptr,
                                     0))
-    GC.@preserve key value begin
-        @assert bpf(API.BPF_MAP_LOOKUP_ELEM, attr) >= 0
+    ret = GC.@preserve key value begin
+        bpf(API.BPF_MAP_LOOKUP_ELEM, attr)
     end
+    ret >= 0 || Base.systemerror(ret)
     value[]
 end
 function Base.getindex(map::AbstractArrayMap{K,V}, idx) where {K,V}
@@ -68,9 +69,10 @@ function Base.getindex(map::AbstractArrayMap{K,V}, idx) where {K,V}
                                     key_ptr,
                                     value_ptr,
                                     0))
-    GC.@preserve key value begin
-        @assert bpf(API.BPF_MAP_LOOKUP_ELEM, attr) >= 0
+    ret = GC.@preserve key value begin
+        bpf(API.BPF_MAP_LOOKUP_ELEM, attr)
     end
+    ret >= 0 || Base.systemerror(ret)
     value[]
 end
 
@@ -83,9 +85,10 @@ function Base.setindex!(map::AbstractHashMap{K,V}, value::U, idx) where {K,V,U}
                                     key_ptr,
                                     value_ptr,
                                     0))
-    GC.@preserve key_ref value_ref begin
-        @assert bpf(API.BPF_MAP_UPDATE_ELEM, attr) >= 0
+    ret = GC.@preserve key_ref value_ref begin
+        bpf(API.BPF_MAP_UPDATE_ELEM, attr)
     end
+    ret >= 0 || Base.systemerror(ret)
     value
 end
 function Base.setindex!(map::AbstractArrayMap{K,V}, value::U, idx) where {K,V,U}
@@ -97,9 +100,10 @@ function Base.setindex!(map::AbstractArrayMap{K,V}, value::U, idx) where {K,V,U}
                                     key_ptr,
                                     value_ptr,
                                     0))
-    GC.@preserve key_ref value_ref begin
-        @assert bpf(API.BPF_MAP_UPDATE_ELEM, attr) >= 0
+    ret = GC.@preserve key_ref value_ref begin
+        bpf(API.BPF_MAP_UPDATE_ELEM, attr)
     end
+    ret >= 0 || Base.systemerror(ret)
     value
 end
 
