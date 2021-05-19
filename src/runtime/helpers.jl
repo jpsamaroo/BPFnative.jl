@@ -43,15 +43,15 @@ end
 @inline clone_redirect(skb::ptr_sk_buff, ifindex::UInt32, flags::UInt64) =
     bpfcall(API.clone_redirect, Clong, Tuple{ptr_sk_buff, UInt32, UInt64}, skb, ifindex, flags)
 
-@inline get_current_pid_tgid() = bpfcall(API.get_current_pid_tgid, UInt64) # TODO: Return Tuple{UInt32,UInt32}
-@inline get_current_uid_gid() = bpfcall(API.get_current_uid_gid, UInt64) # TODO: Return Tuple{UInt32,UInt32}
+function split_u64_u32(x::UInt64)
+    lower = Base.unsafe_trunc(UInt32, x)
+    upper = Base.unsafe_trunc(UInt32, x >> 32)
+    return lower, upper
+end
+
+@inline get_current_pid_tgid() = split_u64_u32(bpfcall(API.get_current_pid_tgid, UInt64))
+@inline get_current_uid_gid() = split_u64_u32(bpfcall(API.get_current_uid_gid, UInt64))
 @inline get_current_comm(buf::AbstractSizedBuffer) =
     bpfcall(API.get_current_comm, Clong, Tuple{BufPtr, UInt32}, pointer(buf), length(buf))
 
 # TODO: The rest!
-
-function split_u64_u32(x::UInt64)
-    lower = Base.unsafe_trunc(UInt32, x)
-    upper = Base.unsafe_trunc(UInt32, (x & (UInt64(typemax(UInt32)) << 32)) >> 32)
-    return lower, upper
-end
