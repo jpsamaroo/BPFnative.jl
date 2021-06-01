@@ -66,6 +66,9 @@ end
 # Runtime API
 module RT
 import ..API
+using ..LLVM
+using ..LLVM.Interop
+include("runtime/maps_core.jl")
 include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
 include("runtime/buffers.jl")

@@ -15,6 +15,7 @@ struct HashMap{K,V} <: AbstractHashMap{K,V}
     fd::Cint
 end
 maptype_to_jltype(::Val{API.BPF_MAP_TYPE_HASH}) = HashMap
+maptype_to_jltype(::Val{API.BPF_MAP_TYPE_STACK_TRACE}) = HashMap
 struct ArrayMap{K,V} <: AbstractArrayMap{K,V}
     fd::Cint
 end
@@ -134,4 +135,47 @@ function Base.haskey(map::HostMap{K,V}, idx) where {K,V}
     end
 end
 
-# TODO: keys(map) using BPF_MAP_GET_NEXT_KEY
+function nextkey(map::HostMap{K,V}, idx) where {K,V}
+    key = Ref{K}(idx)
+    nkey = Ref{K}()
+    key_ptr = Base.unsafe_convert(Ptr{K}, key)
+    nkey_ptr = Base.unsafe_convert(Ptr{K}, nkey)
+    attr = Ref(map_access_elem_attr(map.fd,
+                                    key_ptr,
+                                    nkey_ptr,
+                                    0))
+    ret = GC.@preserve key nkey begin
+        bpf(API.BPF_MAP_GET_NEXT_KEY, attr)
+    end
+    if (ret == -1) && (Libc.errno() == Libc.ENOENT)
+        return nothing
+    end
+    ret >= 0 || Base.systemerror(ret)
+    nkey[]
+end
+
+struct HostMapKeySet{K,V,H<:HostMap{K,V}}
+    map::H
+end
+Base.keys(map::H) where {K,V,H<:HostMap{K,V}} = HostMapKeySet{K,V,H}(map)
+Base.IteratorSize(::Type{<:HostMapKeySet}) = Base.SizeUnknown()
+Base.eltype(::Type{HostMapKeySet{K,V,H}}) where {K,V,H} = K
+function Base.iterate(hmks::HostMapKeySet{K,V,H}) where {K,V,H}
+    fakekey_ref = Ref{K}()
+    iterate(hmks, fakekey_ref[])
+end
+function Base.iterate(hmks::HostMapKeySet{K,V,H}, key) where {K,V,H}
+    nkey = nextkey(hmks.map, key)
+    if nkey === nothing
+        return nothing
+    end
+    return nkey, nkey
+end
+function Base.length(map::HostMap)
+    # TODO: This sucks!
+    ctr = 0
+    for k in keys(map)
+        ctr += 1
+    end
+    ctr
+end

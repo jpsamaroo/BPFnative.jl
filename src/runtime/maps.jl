@@ -1,20 +1,3 @@
-using ..LLVM
-using ..LLVM.Interop
-
-abstract type RTMap{Name,MT,K,V,ME,F} end
-abstract type AbstractHashMap{Name,MT,K,V,ME,F} <: RTMap{Name,MT,K,V,ME,F} end
-abstract type AbstractArrayMap{Name,MT,K,V,ME,F} <: RTMap{Name,MT,K,V,ME,F} end
-
-struct HashMap{Name,MT,K,V,ME,F} <: AbstractHashMap{Name,MT,K,V,ME,F} end
-maptype_to_jltype(::Val{API.BPF_MAP_TYPE_HASH}) = HashMap
-struct ArrayMap{Name,MT,K,V,ME,F} <: AbstractArrayMap{Name,MT,K,V,ME,F} end
-maptype_to_jltype(::Val{API.BPF_MAP_TYPE_ARRAY}) = ArrayMap
-
-function RTMap(; name, maptype, keytype, valuetype, maxentries=1, flags=0)
-    jltype = maptype_to_jltype(Val(maptype))
-    jltype{Symbol(name), maptype, keytype, valuetype, maxentries, flags}()
-end
-
 function map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,V,ME,F}
     keyref = Ref{K}(key)
     GC.@preserve keyref begin
@@ -36,19 +19,6 @@ function map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,
     GC.@preserve keyref begin
         _map_delete_elem(map, Base.unsafe_convert(Ptr{K}, keyref))
     end
-end
-function _genmap!(mod::LLVM.Module, ::Type{<:RTMap{Name,MT,K,V,ME,F}}, ctx) where {Name,MT,K,V,ME,F}
-    T_i32 = LLVM.Int32Type(ctx)
-    T_map = LLVM.StructType([T_i32, T_i32, T_i32, T_i32, T_i32], ctx)
-    name = string(Name)
-    gv = GlobalVariable(mod, T_map, name)
-    section!(gv, "maps")
-    alignment!(gv, 4)
-    vec = Any[Int32(MT),Int32(sizeof(K)),Int32(sizeof(V)),Int32(ME),Int32(F)]
-    init = ConstantStruct([ConstantInt(v, ctx) for v in vec], ctx)
-    initializer!(gv, init)
-    linkage!(gv, LLVM.API.LLVMLinkOnceODRLinkage)
-    return gv
 end
 @generated function _map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
     JuliaContext() do ctx
@@ -216,6 +186,17 @@ function Base.haskey(map::AbstractArrayMap{Name,MT,K,V,ME,F}, idx) where {Name,M
         false
     end
 end
+
+function Base.get(map::RTMap{Name,MT,K,V,ME,F}, k::K, v::V) where {Name,MT,K,V,ME,F}
+    map_v = map[k]
+    if map_v !== nothing
+        return map_v
+    else
+        return v
+    end
+end
+@inline Base.get(map::RTMap{Name,MT,K,V,ME,F}, k, v) where {Name,MT,K,V,ME,F} =
+    get(map, bpfconvert(K, k), bpfconvert(V, v))
 
 ## Perf
 
