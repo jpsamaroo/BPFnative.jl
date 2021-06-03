@@ -220,22 +220,20 @@ if run_root_tests
             end
         end
         @test_skip "uprobe"
-        #= FIXME
-        @testset "uprobe" begin
-            up = UProbe(+, Tuple{Int,Int}) do regs
-                return 0
-            end
-            API.load(up)
-            API.unload(up)
-            @testset "retprobe" begin
-                up = UProbe(+, Tuple{Int,Int}; retprobe=true) do regs
-                    return 0
-                end
-                API.load(up)
-                API.unload(up)
-            end
-        end
-        =#
+        #@testset "uprobe" begin
+        #    up = UProbe(+, Tuple{Int,Int}) do regs
+        #        return 0
+        #    end
+        #    API.load(up)
+        #    API.unload(up)
+        #    @testset "retprobe" begin
+        #        up = UProbe(+, Tuple{Int,Int}; retprobe=true) do regs
+        #            return 0
+        #        end
+        #        API.load(up)
+        #        API.unload(up)
+        #    end
+        #end
         @testset "tracepoint" begin
             p = Tracepoint("clk", "clk_enable") do regs
                 return 0
@@ -456,14 +454,13 @@ if run_root_tests
         # TODO: get_current_comm
         @testset "get_stackid" begin
             # from BCC's stackcount
-            # FIXME: { i64, i32 } causes verifier errors
             struct StackKey
-                tgid::UInt64
+                tgid::UInt32
                 sid::Clong
             end
             kp = KProbe("ksys_write"; license="GPL") do x
-                stacks = RT.RTMap(;name="stacks",maptype=API.BPF_MAP_TYPE_STACK_TRACE,keytype=UInt32,valuetype=NTuple{API.PERF_MAX_STACK_DEPTH,UInt64},maxentries=100)
-                counts = RT.RTMap(;name="counts",maptype=API.BPF_MAP_TYPE_HASH,keytype=StackKey,valuetype=UInt32,maxentries=100)
+                stacks = RT.RTMap(;name="stacks",maptype=API.BPF_MAP_TYPE_STACK_TRACE,keytype=UInt32,valuetype=NTuple{API.PERF_MAX_STACK_DEPTH,UInt64},maxentries=10000)
+                counts = RT.RTMap(;name="counts",maptype=API.BPF_MAP_TYPE_HASH,keytype=StackKey,valuetype=UInt32,maxentries=10000)
                 pid, tgid = RT.get_current_pid_tgid()
                 sid = RT.get_stackid(x, stacks, 0)
                 key = StackKey(tgid, sid)
@@ -475,17 +472,14 @@ if run_root_tests
                 stacks = Host.hostmap(API.findmap(kp.obj, "stacks"); K=UInt32, V=NTuple{API.PERF_MAX_STACK_DEPTH,UInt64})
                 counts = Host.hostmap(API.findmap(kp.obj, "counts"); K=StackKey, V=UInt32)
                 write(test_io, "1"); flush(test_io)
-                @test length(counts) > 0
-                key = nothing
-                for k in keys(counts)
-                    if k.tgid == getpid()
-                        key = k
-                        break
-                    end
-                end
-                @test key !== nothing
+                ks = collect(keys(counts))
+                @test length(ks) > 0
+                key = first(ks)
+                # TODO: Should we be able to find a key with getpid() == key.tgid?
                 @test haskey(counts, key)
+                # TODO: This is potentially racy
                 @test haskey(stacks, key.sid)
+                @test occursin("ksys_write", Host.stack_to_string(stacks[key.sid]))
             end
         end
     end

@@ -178,21 +178,21 @@ Base.keys(map::H) where {K,V,H<:HostMap{K,V}} = HostMapKeySet{K,V,H}(map)
 Base.IteratorSize(::Type{<:HostMapKeySet}) = Base.SizeUnknown()
 Base.eltype(::Type{HostMapKeySet{K,V,H}}) where {K,V,H} = K
 function Base.iterate(hmks::HostMapKeySet{K,V,H}) where {K,V,H}
-    fakekey_ref = Ref{K}()
-    iterate(hmks, fakekey_ref[])
+    fakekey_ref = ZeroInitRef(K)
+    realkey = if haskey(hmks.map, fakekey_ref[])
+        fakekey_ref[]
+    else
+        nextkey(hmks.map, fakekey_ref[])
+    end
+    realkey === nothing && return nothing # empty
+    return realkey, (realkey, realkey)
 end
-function Base.iterate(hmks::HostMapKeySet{K,V,H}, key) where {K,V,H}
-    nkey = nextkey(hmks.map, key)
-    if nkey === nothing
+function Base.iterate(hmks::HostMapKeySet{K,V,H}, (lastkey, initial)) where {K,V,H}
+    lastkey === nothing && return nothing
+    nkey = nextkey(hmks.map, lastkey)
+    if nkey === nothing || nkey == lastkey
         return nothing
     end
-    return nkey, nkey
+    return nkey, (nkey == initial ? nothing : nkey, initial)
 end
-function Base.length(map::HostMap)
-    # TODO: This sucks!
-    ctr = 0
-    for k in keys(map)
-        ctr += 1
-    end
-    ctr
-end
+Base.length(map::HostMap) = length(keys(map))
