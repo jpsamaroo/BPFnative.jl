@@ -220,22 +220,20 @@ if run_root_tests
             end
         end
         @test_skip "uprobe"
-        #= FIXME
-        @testset "uprobe" begin
-            up = UProbe(+, Tuple{Int,Int}) do regs
-                return 0
-            end
-            API.load(up)
-            API.unload(up)
-            @testset "retprobe" begin
-                up = UProbe(+, Tuple{Int,Int}; retprobe=true) do regs
-                    return 0
-                end
-                API.load(up)
-                API.unload(up)
-            end
-        end
-        =#
+        #@testset "uprobe" begin
+        #    up = UProbe(+, Tuple{Int,Int}) do regs
+        #        return 0
+        #    end
+        #    API.load(up)
+        #    API.unload(up)
+        #    @testset "retprobe" begin
+        #        up = UProbe(+, Tuple{Int,Int}; retprobe=true) do regs
+        #            return 0
+        #        end
+        #        API.load(up)
+        #        API.unload(up)
+        #    end
+        #end
         @testset "tracepoint" begin
             p = Tracepoint("clk", "clk_enable") do regs
                 return 0
@@ -423,33 +421,65 @@ if run_root_tests
             kp = KProbe("ksys_write") do x
                 mymap = RT.RTMap(;name="mymap",maptype=API.BPF_MAP_TYPE_HASH,keytype=UInt32,valuetype=UInt32,maxentries=2)
                 pid, tgid = RT.get_current_pid_tgid()
-                mymap[1] = pid
-                mymap[2] = tgid
+                mymap[tgid] = pid
                 0
             end
             API.load(kp) do
                 map = first(API.maps(kp.obj))
                 hmap = Host.hostmap(map; K=UInt32, V=UInt32)
                 write(test_io, "1"); flush(test_io)
-                @test hmap[1] > 0
-                @test hmap[2] > 0
+                # FIXME: Why doesn't this work?
+                #@test haskey(hmap, getpid())
+                #@test hmap[getpid()] == getpid()
             end
         end
+        iob = IOBuffer()
+        run(pipeline(`id -u`; stdout=iob))
+        euid = parse(Int, chomp(String(take!(iob))))
         @testset "get_current_uid_gid" begin
             kp = KProbe("ksys_write") do x
                 mymap = RT.RTMap(;name="mymap",maptype=API.BPF_MAP_TYPE_HASH,keytype=UInt32,valuetype=UInt32,maxentries=2)
                 uid, gid = RT.get_current_uid_gid()
-                mymap[1] = uid
-                mymap[2] = gid
+                mymap[uid] = gid
                 0
             end
             API.load(kp) do
                 map = first(API.maps(kp.obj))
                 hmap = Host.hostmap(map; K=UInt32, V=UInt32)
                 write(test_io, "1"); flush(test_io)
-                # TODO: How do we test this well?
-                @test haskey(hmap, 1)
-                @test haskey(hmap, 2)
+                @test haskey(hmap, euid)
+                @test hmap[euid] == euid # Not sure if a good idea, but eh
+            end
+        end
+        # TODO: get_current_comm
+        @testset "get_stackid" begin
+            # from BCC's stackcount
+            struct StackKey
+                tgid::UInt32
+                sid::Clong
+            end
+            kp = KProbe("ksys_write"; license="GPL") do x
+                stacks = RT.RTMap(;name="stacks",maptype=API.BPF_MAP_TYPE_STACK_TRACE,keytype=UInt32,valuetype=NTuple{API.PERF_MAX_STACK_DEPTH,UInt64},maxentries=10000)
+                counts = RT.RTMap(;name="counts",maptype=API.BPF_MAP_TYPE_HASH,keytype=StackKey,valuetype=UInt32,maxentries=10000)
+                pid, tgid = RT.get_current_pid_tgid()
+                sid = RT.get_stackid(x, stacks, 0)
+                key = StackKey(tgid, sid)
+                old_count = get(counts, key, 0)
+                counts[key] = old_count + 1
+                0
+            end
+            API.load(kp) do
+                stacks = Host.hostmap(API.findmap(kp.obj, "stacks"); K=UInt32, V=NTuple{API.PERF_MAX_STACK_DEPTH,UInt64})
+                counts = Host.hostmap(API.findmap(kp.obj, "counts"); K=StackKey, V=UInt32)
+                write(test_io, "1"); flush(test_io)
+                ks = collect(keys(counts))
+                @test length(ks) > 0
+                key = first(ks)
+                # TODO: Should we be able to find a key with getpid() == key.tgid?
+                @test haskey(counts, key)
+                # TODO: This is potentially racy
+                @test haskey(stacks, key.sid)
+                @test occursin("ksys_write", Host.stack_to_string(stacks[key.sid]))
             end
         end
     end

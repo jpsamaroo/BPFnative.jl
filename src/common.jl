@@ -255,6 +255,8 @@ end
     sk_assign
 end
 
+const PERF_MAX_STACK_DEPTH = 127
+
 # Kernel structures
 
 if has_vmlinux

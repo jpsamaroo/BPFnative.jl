@@ -1,6 +1,7 @@
 # BPF helpers
 
 const ptr_sk_buff = API.pointertype(API.sk_buff)
+const ptr_task_struct = Ptr{Cvoid} #API.pointertype(API.task_struct)
 
 bpfconvert(x) = x
 bpfconvert(x::AbstractBuffer) = pointer(x)
@@ -53,5 +54,20 @@ end
 @inline get_current_uid_gid() = split_u64_u32(bpfcall(API.get_current_uid_gid, UInt64))
 @inline get_current_comm(buf::AbstractSizedBuffer) =
     bpfcall(API.get_current_comm, Clong, Tuple{BufPtr, UInt32}, pointer(buf), length(buf))
+
+@inline get_stackid(ctx::T, map::M, flags::Integer) where {T,M<:RTMap} =
+    bpfcall(API.get_stackid, Clong, Tuple{T, M, UInt64}, ctx, map, unsafe_trunc(UInt64,flags))
+@inline function get_current_task()
+    res = bpfcall(API.get_current_task, UInt64)
+    if res > 0
+        unsafe_load(reinterpret(ptr_task_struct, res))
+    else
+        nothing
+    end
+end
+@inline get_stack(ctx::T, buf::AbstractSizedBuffer, flags::UInt64) where {T} =
+    bpfcall(API.get_stack, Clong, Tuple{T, BufPtr, UInt32, UInt64}, ctx, pointer(buf), length(buf), flags)
+@inline get_task_stack(ctx::ptr_task_struct, buf::AbstractSizedBuffer, flags::UInt64) where {T} =
+    bpfcall(API.get_task_stack, Clong, Tuple{ptr_task_struct, BufPtr, UInt32, UInt64}, ctx, pointer(buf), length(buf), flags)
 
 # TODO: The rest!

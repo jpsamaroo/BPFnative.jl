@@ -1,55 +1,28 @@
-using ..LLVM
-using ..LLVM.Interop
-
-abstract type RTMap{Name,MT,K,V,ME,F} end
-abstract type AbstractHashMap{Name,MT,K,V,ME,F} <: RTMap{Name,MT,K,V,ME,F} end
-abstract type AbstractArrayMap{Name,MT,K,V,ME,F} <: RTMap{Name,MT,K,V,ME,F} end
-
-struct HashMap{Name,MT,K,V,ME,F} <: AbstractHashMap{Name,MT,K,V,ME,F} end
-maptype_to_jltype(::Val{API.BPF_MAP_TYPE_HASH}) = HashMap
-struct ArrayMap{Name,MT,K,V,ME,F} <: AbstractArrayMap{Name,MT,K,V,ME,F} end
-maptype_to_jltype(::Val{API.BPF_MAP_TYPE_ARRAY}) = ArrayMap
-
-function RTMap(; name, maptype, keytype, valuetype, maxentries=1, flags=0)
-    jltype = maptype_to_jltype(Val(maptype))
-    jltype{Symbol(name), maptype, keytype, valuetype, maxentries, flags}()
-end
-
 function map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,V,ME,F}
-    keyref = Ref{K}(key)
+    keyref = ZeroInitRef(K, key)
     GC.@preserve keyref begin
-        _map_lookup_elem(map, Base.unsafe_convert(Ptr{K}, keyref))
+        keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
+        _map_lookup_elem(map, keyref_ptr)
     end
 end
-function map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K, value::V, flags::UInt64) where {Name,MT,K,V,ME,F}
-    keyref = Ref{K}(key)
-    valref = Ref{V}(value)
+@inline function map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K, value::V, flags::UInt64) where {Name,MT,K,V,ME,F}
+    keyref = ZeroInitRef(K, key)
+    valref = ZeroInitRef(V, value)
     GC.@preserve keyref valref begin
-        _map_update_elem(map,
-                             Base.unsafe_convert(Ptr{K}, keyref),
-                             Base.unsafe_convert(Ptr{V}, valref),
-                             flags)
+        keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
+        valref_ptr = Base.unsafe_convert(Ptr{V}, valref)
+        _map_update_elem(map, keyref_ptr, valref_ptr, flags)
     end
 end
 function map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,V,ME,F}
-    keyref = Ref{K}(key)
+    keyref = ZeroInitRef(K, key)
     GC.@preserve keyref begin
+        keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
         _map_delete_elem(map, Base.unsafe_convert(Ptr{K}, keyref))
     end
 end
-function _genmap!(mod::LLVM.Module, ::Type{<:RTMap{Name,MT,K,V,ME,F}}, ctx) where {Name,MT,K,V,ME,F}
-    T_i32 = LLVM.Int32Type(ctx)
-    T_map = LLVM.StructType([T_i32, T_i32, T_i32, T_i32, T_i32], ctx)
-    name = string(Name)
-    gv = GlobalVariable(mod, T_map, name)
-    section!(gv, "maps")
-    alignment!(gv, 4)
-    vec = Any[Int32(MT),Int32(sizeof(K)),Int32(sizeof(V)),Int32(ME),Int32(F)]
-    init = ConstantStruct([ConstantInt(v, ctx) for v in vec], ctx)
-    initializer!(gv, init)
-    linkage!(gv, LLVM.API.LLVMLinkOnceODRLinkage)
-    return gv
-end
+
+# TODO: Use bpfcall
 @generated function _map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
     JuliaContext() do ctx
         T_keyp = LLVM.PointerType(convert(LLVMType, K, ctx))
@@ -155,7 +128,7 @@ end
 @inline Base.getindex(map::RTMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F} =
     getindex(map, bpfconvert(K, idx))
 Base.getindex(map::RTMap, ::Nothing) = nothing
-function Base.getindex(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx::K) where {Name,MT,K,V,ME,F}
+@inline function Base.getindex(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx::K) where {Name,MT,K,V,ME,F}
     ptr = map_lookup_elem(map, idx)
     if reinterpret(UInt64, ptr) > 0
         return unsafe_load(ptr)
@@ -163,7 +136,7 @@ function Base.getindex(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx::K) where {Na
         return nothing
     end
 end
-function Base.getindex(map::AbstractArrayMap{Name,MT,K,V,ME,F}, idx::K) where {Name,MT,K,V,ME,F}
+@inline function Base.getindex(map::AbstractArrayMap{Name,MT,K,V,ME,F}, idx::K) where {Name,MT,K,V,ME,F}
     if idx > 0
         ptr = map_lookup_elem(map, idx-K(1))
         if reinterpret(UInt64, ptr) > 0
@@ -178,14 +151,14 @@ end
 
 @inline Base.setindex!(map::RTMap{Name,MT,K,V,ME,F}, value, idx) where {Name,MT,K,V,ME,F} =
     setindex!(map, bpfconvert(V, value), bpfconvert(K, idx))
-Base.setindex!(map::RTMap, ::Nothing, idx) = nothing
-Base.setindex!(map::RTMap, value, ::Nothing) = nothing
-Base.setindex!(map::RTMap, ::Nothing, ::Nothing) = nothing
-function Base.setindex!(map::AbstractHashMap{Name,MT,K,V,ME,F}, value::V, idx::K) where {Name,MT,K,V,ME,F}
+@inline Base.setindex!(map::RTMap, ::Nothing, idx) = nothing
+@inline Base.setindex!(map::RTMap, value, ::Nothing) = nothing
+@inline Base.setindex!(map::RTMap, ::Nothing, ::Nothing) = nothing
+@inline function Base.setindex!(map::AbstractHashMap{Name,MT,K,V,ME,F}, value::V, idx::K) where {Name,MT,K,V,ME,F}
     map_update_elem(map, idx, value, UInt64(0))
     value
 end
-function Base.setindex!(map::AbstractArrayMap{Name,MT,K,V,ME,F}, value::V, idx::K) where {Name,MT,K,V,ME,F}
+@inline function Base.setindex!(map::AbstractArrayMap{Name,MT,K,V,ME,F}, value::V, idx::K) where {Name,MT,K,V,ME,F}
     if idx > 0
         map_update_elem(map, idx-K(1), value, UInt64(0))
     end
@@ -206,16 +179,27 @@ end
     map
 end
 
-Base.haskey(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F} =
+@inline Base.haskey(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F} =
     map[bpfconvert(K, idx)] !== nothing
-Base.haskey(map::RTMap, ::Nothing) = false
-function Base.haskey(map::AbstractArrayMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F}
+@inline Base.haskey(map::RTMap, ::Nothing) = false
+@inline function Base.haskey(map::AbstractArrayMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F}
     if idx > 0
         map[bpfconvert(K, idx)-K(1)] !== nothing
     else
         false
     end
 end
+
+@inline function Base.get(map::RTMap{Name,MT,K,V,ME,F}, k::K, v::V) where {Name,MT,K,V,ME,F}
+    map_v = map[k]
+    if map_v !== nothing
+        return map_v
+    else
+        return v
+    end
+end
+@inline Base.get(map::RTMap{Name,MT,K,V,ME,F}, k, v) where {Name,MT,K,V,ME,F} =
+    get(map, bpfconvert(K, k), bpfconvert(V, v))
 
 ## Perf
 

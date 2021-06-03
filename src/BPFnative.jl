@@ -66,6 +66,10 @@ end
 # Runtime API
 module RT
 import ..API
+using ..LLVM
+using ..LLVM.Interop
+import Core: LLVMPtr
+include("runtime/maps_core.jl")
 include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
 include("runtime/buffers.jl")
@@ -79,6 +83,7 @@ import ..API
 include("host/syscall.jl")
 include("host/maps.jl")
 include("host/socket.jl")
+include("host/kallsyms.jl")
 end
 
 # Compiler
