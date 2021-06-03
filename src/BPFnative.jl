@@ -82,6 +82,7 @@ import ..API
 include("host/syscall.jl")
 include("host/maps.jl")
 include("host/socket.jl")
+include("host/kallsyms.jl")
 end
 
 # Compiler
