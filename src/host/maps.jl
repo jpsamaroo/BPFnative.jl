@@ -46,8 +46,25 @@ struct map_access_elem_attr
     flags::UInt64
 end
 
+memset!(ptr::Ptr{T}) where T =
+    ccall(:memset, Cvoid,
+          (Ptr{T}, UInt8, UInt64),
+          ptr, UInt8(0), sizeof(T))
+"Creates a Ref{T} that's been zero-initialized before being stored. Necessary
+to ensure that struct padding bytes are zeroed."
+function ZeroInitRef(T, val; set=true)
+    ref = Ref{T}()
+    memset!(Base.unsafe_convert(Ptr{T}, ref))
+    if set
+        ref[] = val
+    end
+    ref
+end
+ZeroInitRef(val::T) where T = ZeroInitRef(T, val)
+ZeroInitRef(::Type{T}) where T = ZeroInitRef(T, nothing; set=false)
+
 function Base.getindex(map::AbstractHashMap{K,V}, idx) where {K,V}
-    key = Ref{K}(idx)
+    key = ZeroInitRef(K, idx)
     value = Ref{V}()
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
     value_ptr = Base.unsafe_convert(Ptr{V}, value)
@@ -62,7 +79,7 @@ function Base.getindex(map::AbstractHashMap{K,V}, idx) where {K,V}
     value[]
 end
 function Base.getindex(map::AbstractArrayMap{K,V}, idx) where {K,V}
-    key = Ref{K}(idx-1)
+    key = ZeroInitRef(K, idx-1)
     value = Ref{V}()
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
     value_ptr = Base.unsafe_convert(Ptr{V}, value)
@@ -78,8 +95,8 @@ function Base.getindex(map::AbstractArrayMap{K,V}, idx) where {K,V}
 end
 
 function Base.setindex!(map::AbstractHashMap{K,V}, value::U, idx) where {K,V,U}
-    key_ref = Ref{K}(convert(K,idx))
-    value_ref = Ref{V}(convert(V,value))
+    key_ref = ZeroInitRef(convert(K,idx))
+    value_ref = ZeroInitRef(convert(V,value))
     key_ptr = Base.unsafe_convert(Ptr{K}, key_ref)
     value_ptr = Base.unsafe_convert(Ptr{V}, value_ref)
     attr = Ref(map_access_elem_attr(map.fd,
@@ -93,8 +110,8 @@ function Base.setindex!(map::AbstractHashMap{K,V}, value::U, idx) where {K,V,U}
     value
 end
 function Base.setindex!(map::AbstractArrayMap{K,V}, value::U, idx) where {K,V,U}
-    key_ref = Ref{K}(convert(K,idx-1))
-    value_ref = Ref{V}(convert(V,value))
+    key_ref = ZeroInitRef(convert(K,idx-1))
+    value_ref = ZeroInitRef(convert(V,value))
     key_ptr = Base.unsafe_convert(Ptr{K}, key_ref)
     value_ptr = Base.unsafe_convert(Ptr{V}, value_ref)
     attr = Ref(map_access_elem_attr(map.fd,
@@ -109,7 +126,7 @@ function Base.setindex!(map::AbstractArrayMap{K,V}, value::U, idx) where {K,V,U}
 end
 
 function Base.delete!(map::AbstractHashMap{K,V}, idx) where {K,V}
-    key = Ref{K}(idx)
+    key = ZeroInitRef(K, idx)
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
     attr = Ref(map_access_elem_attr(map.fd,
                                     key_ptr,
@@ -122,7 +139,7 @@ function Base.delete!(map::AbstractHashMap{K,V}, idx) where {K,V}
 end
 
 function Base.haskey(map::HostMap{K,V}, idx) where {K,V}
-    key = Ref{K}(idx)
+    key = ZeroInitRef(K, idx)
     value = Ref{V}()
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
     value_ptr = Base.unsafe_convert(Ptr{V}, value)
@@ -136,7 +153,7 @@ function Base.haskey(map::HostMap{K,V}, idx) where {K,V}
 end
 
 function nextkey(map::HostMap{K,V}, idx) where {K,V}
-    key = Ref{K}(idx)
+    key = ZeroInitRef(K, idx)
     nkey = Ref{K}()
     key_ptr = Base.unsafe_convert(Ptr{K}, key)
     nkey_ptr = Base.unsafe_convert(Ptr{K}, nkey)

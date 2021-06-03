@@ -68,6 +68,7 @@ module RT
 import ..API
 using ..LLVM
 using ..LLVM.Interop
+import Core: LLVMPtr
 include("runtime/maps_core.jl")
 include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
