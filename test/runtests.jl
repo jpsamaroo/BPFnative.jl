@@ -1,5 +1,5 @@
 using BPFnative
-import BPFnative: API, RT, Host
+import BPFnative: API, RT, Host, UBPF
 using Sockets
 using Test
 
@@ -22,6 +22,33 @@ end
 
 using InteractiveUtils
 
+if !isdefined(BPFnative, :libubpf)
+    @warn "ubpf unavailable; skipping interpreter tests"
+end
+function ubpftest(fn, Targs, arg)
+    exe = bpffunction(fn, Targs; btf=false, name="kernel")
+    vm = UBPF.ubpf_vm(;insts=C_NULL, num_insts=0)
+    vm = UBPF.load_elf(vm, exe)
+    if UBPF.verify(vm) != 0
+        error("eBPF verifier error during test")
+    end
+    if arg === nothing
+        UBPF.unsafe_call(vm, C_NULL, 0)
+    else
+        UBPF.unsafe_call(vm, arg, sizeof(arg))
+    end
+end
+macro ubpftest(call)
+    if isdefined(BPFnative, :libubpf)
+        @assert Meta.isexpr(call, :call) "@ubpftest expects a call"
+        @assert length(call.args) <= 2 "Too many call arguments, 1 expected"
+        fn = call.args[1]
+        arg = get(call.args, 2, nothing)
+        Targ = arg !== nothing ? Base.to_tuple_type(typeof.((arg,))) : Tuple{}
+        :(ubpftest($(esc(fn)), $Targ, $arg))
+    end
+end
+
 @testset "codegen" begin
     map_types = (UInt8, UInt16, UInt32, UInt64,
                  Int8,  Int16,  Int32,  Int64)
@@ -33,6 +60,27 @@ using InteractiveUtils
         @test occursin(".section\tlicense,", asm)
         @test occursin("_license,@object", asm)
         @test occursin(".asciz\t\"abc\"", asm)
+        @test @ubpftest(kernel(0)) == 0
+    end
+    @testset "verifier errors" begin
+        @testset "loop" begin
+            function kernel(x)
+                while true end
+                0
+            end
+            @test_throws ErrorException @ubpftest(kernel(0))
+        end
+    end
+    @info "uBPF error messages during testing are OK"
+    @testset "runtime errors" begin
+        @testset "out-of-bounds load" begin
+            kernel(x) = unsafe_load(Ptr{UInt8}(1))
+            @test @ubpftest(kernel(0)) == typemax(UInt)
+        end
+    end
+    @testset "argument usage" begin
+        kernel(x) = x+1
+        @test @ubpftest(kernel(1)) == 2
     end
     @testset "map helpers" begin
         function kernel(x)

@@ -30,6 +30,12 @@ function enable_vmlinux(ans::Bool=true)
     end
 end
 
+# ubpf VM
+module UBPF
+using UBPF_jll
+include("ubpf.jl")
+end
+
 # Common API
 module API
 if !parse(Bool, get(ENV, "JULIA_BPFNATIVE_DISABLE_ARTIFACTS", "0"))
