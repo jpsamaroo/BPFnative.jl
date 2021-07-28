@@ -42,19 +42,7 @@ if has_vmlinux
     import ..VMLinuxBindings
     const VMLinux = VMLinuxBindings
 end
-@generated function offsetof(::Type{T}, ::Val{_field}) where {T<:CBinding.Cstruct,_field}
-    offset = -1
-    for field in CBinding.fields(T).parameters
-        if field.parameters[1] == _field
-            offset = field.parameters[2].parameters[4]
-        end
-    end
-    @assert offset >= 0 "Failed to find offset of $_field in $T"
-    :($offset)
-end
-macro offsetof(T, field)
-    :($offsetof($T, Val($field)))
-end
+include("utils.jl")
 include("common.jl")
 include("libbpf.jl")
 if Sys.islinux()
