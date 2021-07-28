@@ -24,10 +24,10 @@ end
 
 # TODO: Use bpfcall
 @generated function _map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
-    JuliaContext() do ctx
-        T_keyp = LLVM.PointerType(convert(LLVMType, K, ctx))
-        T_valp = LLVM.PointerType(convert(LLVMType, V, ctx))
-        T_jlptr = convert(LLVMType, key, ctx)
+    Context() do ctx
+        T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
+        T_valp = LLVM.PointerType(convert(LLVMType, V; ctx))
+        T_jlptr = convert(LLVMType, key; ctx)
 
         llvm_f, _ = create_function(T_jlptr, [T_jlptr])
         mod = LLVM.parent(llvm_f)
@@ -36,26 +36,26 @@ end
         T_map_gv = llvmtype(map_gv)
 
         Builder(ctx) do builder
-            entry = BasicBlock(llvm_f, "entry", ctx)
+            entry = BasicBlock(llvm_f, "entry"; ctx)
             position!(builder, entry)
             ft = LLVM.FunctionType(T_valp, [T_map_gv, T_keyp])
             ftp = LLVM.PointerType(ft)
             elem = inttoptr!(builder, parameters(llvm_f)[1], T_keyp)
-            f = inttoptr!(builder, ConstantInt(Int64(1), ctx), ftp)
+            f = inttoptr!(builder, ConstantInt(Int64(1); ctx), ftp)
             value = call!(builder, f, [map_gv, elem])
             value = ptrtoint!(builder, value, T_jlptr)
             ret!(builder, value)
         end
-        call_function(llvm_f, Ptr{V}, Tuple{Ptr{K}}, :((key,)))
+        call_function(llvm_f, Ptr{V}, Tuple{Ptr{K}}, :key)
     end
 end
 @generated function _map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}, val::Ptr{V}, flags::UInt64) where {Name,MT,K,V,ME,F}
-    JuliaContext() do ctx
-        T_cint = convert(LLVMType, Cint, ctx)
-        T_keyp = LLVM.PointerType(convert(LLVMType, K, ctx))
-        T_valp = LLVM.PointerType(convert(LLVMType, V, ctx))
-        T_flags = convert(LLVMType, flags, ctx)
-        T_jlptr = convert(LLVMType, key, ctx)
+    Context() do ctx
+        T_cint = convert(LLVMType, Cint; ctx)
+        T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
+        T_valp = LLVM.PointerType(convert(LLVMType, V; ctx))
+        T_flags = convert(LLVMType, flags; ctx)
+        T_jlptr = convert(LLVMType, key; ctx)
 
         llvm_f, _ = create_function(T_cint, [T_jlptr, T_jlptr, T_flags])
         mod = LLVM.parent(llvm_f)
@@ -64,24 +64,24 @@ end
         T_map_gv = llvmtype(map_gv)
 
         Builder(ctx) do builder
-            entry = BasicBlock(llvm_f, "entry", ctx)
+            entry = BasicBlock(llvm_f, "entry"; ctx)
             position!(builder, entry)
             ft = LLVM.FunctionType(T_cint, [T_map_gv, T_keyp, T_valp, T_flags])
             ftp = LLVM.PointerType(ft)
             key_elem = inttoptr!(builder, parameters(llvm_f)[1], T_keyp)
             val_elem = inttoptr!(builder, parameters(llvm_f)[2], T_valp)
-            f = inttoptr!(builder, ConstantInt(Int64(2), ctx), ftp)
+            f = inttoptr!(builder, ConstantInt(Int64(2); ctx), ftp)
             value = call!(builder, f, [map_gv, key_elem, val_elem, parameters(llvm_f)[3]])
             ret!(builder, value)
         end
-        call_function(llvm_f, Cint, Tuple{Ptr{K},Ptr{V},UInt64}, :((key,val,flags)))
+        call_function(llvm_f, Cint, Tuple{Ptr{K},Ptr{V},UInt64}, :key, :val, :flags)
     end
 end
 @generated function _map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
-    JuliaContext() do ctx
-        T_cint = convert(LLVMType, Cint, ctx)
-        T_keyp = LLVM.PointerType(convert(LLVMType, K, ctx))
-        T_jlptr = convert(LLVMType, key, ctx)
+    Context() do ctx
+        T_cint = convert(LLVMType, Cint; ctx)
+        T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
+        T_jlptr = convert(LLVMType, key; ctx)
 
         llvm_f, _ = create_function(T_cint, [T_jlptr])
         mod = LLVM.parent(llvm_f)
@@ -90,16 +90,16 @@ end
         T_map_gv = llvmtype(map_gv)
 
         Builder(ctx) do builder
-            entry = BasicBlock(llvm_f, "entry", ctx)
+            entry = BasicBlock(llvm_f, "entry"; ctx)
             position!(builder, entry)
             ft = LLVM.FunctionType(T_cint, [T_map_gv, T_keyp])
             ftp = LLVM.PointerType(ft)
             elem = inttoptr!(builder, parameters(llvm_f)[1], T_keyp)
-            f = inttoptr!(builder, ConstantInt(Int64(3), ctx), ftp)
+            f = inttoptr!(builder, ConstantInt(Int64(3); ctx), ftp)
             value = call!(builder, f, [map_gv, elem])
             ret!(builder, value)
         end
-        call_function(llvm_f, Cint, Tuple{Ptr{K}}, :((key,)))
+        call_function(llvm_f, Cint, Tuple{Ptr{K}}, :key)
     end
 end
 
@@ -214,7 +214,7 @@ function perf_event_output(pt_ctx::Ptr{API.pt_regs}, map::RTMap, flags::Union{In
     end
 end
 @generated function _perf_event_output(pt_ctx::Ptr{API.pt_regs}, map::RTMap{Name,MT,K,V,ME,F}, flags::UInt64, data::Ptr{D}, sz::UInt64) where {Name,MT,K,V,ME,F,D}
-    JuliaContext() do ctx
+    Context() do ctx
         T_cint = convert(LLVMType, Cint, ctx)
         T_ptctx = convert(LLVMType, pt_ctx, ctx)
         T_datap = LLVM.PointerType(convert(LLVMType, data, ctx))

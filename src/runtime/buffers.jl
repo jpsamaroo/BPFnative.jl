@@ -7,7 +7,7 @@ abstract type AbstractUnsizedBuffer end
 const BufPtr = Core.LLVMPtr{UInt8,0}
 
 @inline @generated function create_buffer(::Val{N}) where N
-    JuliaContext() do ctx
+    Context() do ctx
         T_i8 = LLVM.Int8Type(ctx)
         T_pi8 = LLVM.PointerType(T_i8)
         T_i64 = LLVM.Int64Type(ctx)
@@ -15,7 +15,7 @@ const BufPtr = Core.LLVMPtr{UInt8,0}
         llvm_f, _ = create_function(T_pi8)
         mod = LLVM.parent(llvm_f)
         Builder(ctx) do builder
-            entry = BasicBlock(llvm_f, "entry", ctx)
+            entry = BasicBlock(llvm_f, "entry"; ctx)
             position!(builder, entry)
 
             # Allocate stack buffer
@@ -48,7 +48,7 @@ macro create_string(str::String)
 end
 
 @inline @generated function create_string(::Val{str}) where str
-    JuliaContext() do ctx
+    Context() do ctx
         _str = String(str)
         T_i8 = LLVM.Int8Type(ctx)
         T_pi8 = LLVM.PointerType(T_i8)
@@ -58,7 +58,7 @@ end
         llvm_f, _ = create_function(T_pi8)
         mod = LLVM.parent(llvm_f)
         Builder(ctx) do builder
-            entry = BasicBlock(llvm_f, "entry", ctx)
+            entry = BasicBlock(llvm_f, "entry"; ctx)
             position!(builder, entry)
 
             # Allocate string

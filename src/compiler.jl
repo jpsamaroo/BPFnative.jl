@@ -52,7 +52,7 @@ function bpffunction_compile(@nospecialize(job::CompilerJob))
 
     # compile to BPF
     method_instance, world = GPUCompiler.emit_julia(job)
-    ir, kernel = GPUCompiler.emit_llvm(job, method_instance, world; libraries=false)
+    ir, kernel = GPUCompiler.emit_llvm(job, method_instance; libraries=false)
     if format == :llvm
         return collect.(codeunits.(string.((ir, kernel)))) # TODO: Make more efficient
     elseif format == :asm
@@ -60,8 +60,8 @@ function bpffunction_compile(@nospecialize(job::CompilerJob))
     elseif format == :obj
         format = LLVM.API.LLVMObjectFile
     end
-    code = GPUCompiler.emit_asm(job, ir, kernel; format=format, validate=true, strip=!btf)
-    return collect(codeunits(code))
+    code, _ = GPUCompiler.emit_asm(job, ir; format=format, validate=true, strip=!btf)
+    return Vector{UInt8}(code)
 end
 bpffunction_link(@nospecialize(job::CompilerJob), exe) = exe
 
@@ -86,7 +86,7 @@ function GPUCompiler.finish_module!(job::BPFCompilerJob, mod::LLVM.Module)
         linkage!(glob, LLVM.API.LLVMExternalLinkage)
         constant!(glob, true)
         section!(glob, "license")
-        str = ConstantArray(Vector{UInt8}(license*'\0'), ctx)
+        str = ConstantArray(Vector{UInt8}(license*'\0'); ctx)
         @assert context(glob) == context(str) == ctx
         initializer!(glob, str)
     end
