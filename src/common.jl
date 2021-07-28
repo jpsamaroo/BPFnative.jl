@@ -270,6 +270,9 @@ pointertype(::Type{xdp_md}) = Cptr{xdp_md}
 const sk_buff = c".VMLinux.struct sk_buff"
 pointertype(::Type{sk_buff}) = Cptr{sk_buff}
 
+const task_struct = c".VMLinux.struct task_struct"
+pointertype(::Type{task_struct}) = Cptr{task_struct}
+
 else
 
 ## Perf/Ptrace
@@ -347,4 +350,8 @@ struct sk_buff
 end
 pointertype(::Type{sk_buff}) = Ptr{sk_buff}
 
+const task_struct = Nothing
+pointertype(::Type{task_struct}) = Ptr{task_struct}
+
+end
 end

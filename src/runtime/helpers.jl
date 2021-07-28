@@ -1,7 +1,7 @@
 # BPF helpers
 
 const ptr_sk_buff = API.pointertype(API.sk_buff)
-const ptr_task_struct = Ptr{Cvoid} #API.pointertype(API.task_struct)
+const ptr_task_struct = API.pointertype(API.task_struct)
 
 bpfconvert(x) = x
 bpfconvert(x::AbstractBuffer) = pointer(x)
