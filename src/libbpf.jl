@@ -29,6 +29,12 @@ end
 
 bpfprintfn(fn) = ccall((:libbpf_set_print, libbpf), Ptr{Cvoid}, (Ptr{Cvoid},), fn)
 
+function libbpf_strerror(ret)
+    buf = Vector{UInt8}(undef, 64)
+    ccall((:libbpf_strerror, libbpf), Cint, (Cint, Ptr{UInt8}, Csize_t), ret, buf, 64)
+    String(buf)
+end
+
 Base.@kwdef struct bpf_object_open_opts
     sz::Csize_t = sizeof(bpf_object_open_opts)
     object_name::Cstring = C_NULL
@@ -137,8 +143,8 @@ function resize!(map::Map, sz::Integer)
     nothing
 end
 function reuse_fd(map::Map, fd::Integer)
-    ret = ccall((:bpf_map_reuse_fd, libbpf), Cint, (bpf_map,Cint), map[], Cint(fd))
-    @assert ret == 0
+    ret = ccall((:bpf_map__reuse_fd, libbpf), Cint, (bpf_map,Cint), map[], Cint(fd))
+    @assert ret == 0 "$(libbpf_strerror(ret))"
     nothing
 end
 
