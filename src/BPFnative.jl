@@ -56,6 +56,8 @@ import ..API
 using ..LLVM
 using ..LLVM.Interop
 import Core: LLVMPtr
+import ..CBinding
+import ..CBinding: @c_str, Cptr
 include("runtime/maps_core.jl")
 include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
@@ -63,6 +65,7 @@ include("runtime/buffers.jl")
 include("runtime/helpers.jl")
 include("runtime/intrinsics.jl")
 include("runtime/constants.jl")
+include("runtime/utils.jl")
 end
 
 # Host API
