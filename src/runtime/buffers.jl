@@ -39,6 +39,7 @@ struct SizedBuffer <: AbstractSizedBuffer
     length::UInt32
 end
 SizedBuffer(buf::AbstractSizedBuffer) = SizedBuffer(pointer(buf), length(buf))
+SizedBuffer(ptr::Ptr, length) = SizedBuffer(reinterpret(BufPtr, ptr), length)
 Base.pointer(str::SizedBuffer) = str.ptr
 Base.length(str::SizedBuffer) = str.length
 @inline create_buffer(N::Int) = SizedBuffer(create_buffer(Val(N)), N)
@@ -92,5 +93,6 @@ struct UnsizedBuffer <: AbstractUnsizedBuffer
     ptr::BufPtr
 end
 UnsizedBuffer(buf::AbstractBuffer) = UnsizedBuffer(pointer(buf))
+UnsizedBuffer(ptr::Ptr) = UnsizedBuffer(reinterpret(BufPtr, ptr))
 Base.pointer(str::UnsizedBuffer) = str.ptr
 Base.length(str::UnsizedBuffer) = missing
