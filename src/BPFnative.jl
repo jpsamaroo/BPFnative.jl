@@ -62,6 +62,7 @@ include("runtime/maps.jl")
 include("runtime/buffers.jl")
 include("runtime/helpers.jl")
 include("runtime/intrinsics.jl")
+include("runtime/constants.jl")
 end
 
 # Host API
