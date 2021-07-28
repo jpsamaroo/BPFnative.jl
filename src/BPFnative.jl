@@ -82,6 +82,7 @@ include("reflection.jl")
 include("probes.jl")
 
 # Useful utilities
+include("extra.jl")
 include("xdp.jl")
 
 end # module
