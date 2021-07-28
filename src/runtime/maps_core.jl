@@ -61,10 +61,55 @@ end
 end
 @inline memset!(dest_ptr::LLVMPtr{T,DestAS}, value::UInt8, len::Integer) where {T,DestAS} =
     memset!(reinterpret(LLVMPtr{UInt8,DestAS}, dest_ptr), value, UInt64(len))
-@inline function ZeroInitRef(T, val)
+@inline memset!(dest_ptr::Union{<:Ptr,<:LLVMPtr}, src_ptr::Union{<:Ptr,<:LLVMPtr}, len::Integer) =
+    memset!(reinterpret(LLVMPtr{UInt8,0}, dest_ptr), reinterpret(LLVMPtr{UInt8,0}, src_ptr), UInt64(len))
+
+@inline function _memcpy!(builder, ctx, mod, dest, src, len, volatile)
+    T_nothing = LLVM.VoidType(ctx)
+    T_dest = llvmtype(dest)
+    T_src = llvmtype(src)
+    T_int8 = convert(LLVMType, UInt8; ctx)
+    T_int64 = convert(LLVMType, UInt64; ctx)
+    T_int1 = LLVM.Int1Type(ctx)
+
+    T_intr = LLVM.FunctionType(T_nothing, [T_dest, T_src, T_int64, T_int1])
+    intr = LLVM.Function(mod, "llvm.memcpy.p$(Int(addrspace(T_dest)))p$(Int(addrspace(T_src))).i64", T_intr)
+    call!(builder, intr, [dest, src, len, volatile])
+end
+@inline @generated function memcpy!(dest_ptr::LLVMPtr{UInt8,DestAS}, src_ptr::LLVMPtr{UInt8,SrcAS}, len::LT) where {DestAS,SrcAS,LT<:Union{Int64,UInt64}}
+    Context() do ctx
+        T_nothing = LLVM.VoidType(ctx)
+        T_pint8_dest = convert(LLVMType, dest_ptr; ctx)
+        T_pint8_src = convert(LLVMType, src_ptr; ctx)
+        T_int8 = convert(LLVMType, UInt8; ctx)
+        T_int64 = convert(LLVMType, UInt64; ctx)
+        T_int1 = LLVM.Int1Type(ctx)
+
+        llvm_f, _ = create_function(T_nothing, [T_pint8_dest, T_pint8_src, T_int64])
+        mod = LLVM.parent(llvm_f)
+        Builder(ctx) do builder
+            entry = BasicBlock(llvm_f, "entry"; ctx)
+            position!(builder, entry)
+
+            _memcpy!(builder, ctx, mod, parameters(llvm_f)[1], parameters(llvm_f)[2], parameters(llvm_f)[3], ConstantInt(T_int1, 0))
+            ret!(builder)
+        end
+        call_function(llvm_f, Nothing, Tuple{LLVMPtr{UInt8,DestAS},LLVMPtr{UInt8,SrcAS},LT}, :dest_ptr, :src_ptr, :len)
+    end
+end
+@inline memcpy!(dest_ptr::LLVMPtr{T,DestAS}, src_ptr::LLVMPtr{T,SrcAS}, len::Integer) where {T,DestAS,SrcAS} =
+    memcpy!(reinterpret(LLVMPtr{UInt8,DestAS}, dest_ptr), reinterpret(LLVMPtr{UInt8,SrcAS}, src_ptr), UInt64(len))
+@inline memcpy!(dest_ptr::Union{<:Ptr,<:LLVMPtr}, src_ptr::Union{<:Ptr,<:LLVMPtr}, len::Integer) =
+    memcpy!(reinterpret(LLVMPtr{UInt8,0}, dest_ptr), reinterpret(LLVMPtr{UInt8,0}, src_ptr), UInt64(len))
+
+@inline function ZeroInitRef(T)
     ref = Ref{T}()
     ref_llptr = reinterpret(LLVMPtr{T,0}, Base.unsafe_convert(Ptr{T}, ref))
     memset!(ref_llptr, UInt8(0), sizeof(T))
+    ref
+end
+@inline function ZeroInitRef(T, val)
+    ref = ZeroInitRef(T)
     ref[] = val
     ref
 end
