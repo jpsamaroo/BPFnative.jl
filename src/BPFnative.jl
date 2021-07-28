@@ -11,12 +11,10 @@ using Preferences
 const use_vmlinux = parse(Bool, @load_preference("use_vmlinux", "false"))
 if use_vmlinux
     const has_vmlinux = try
-        @debug "Loading vmlinux..."
-        vmlinux_load_time = @timed include("vmlinux.jl")
-        @debug "Loaded vmlinux in $(vmlinux_load_time.time) seconds"
+        using VMLinuxBindings
         true
     catch err
-        @warn "Failed to load/generate Linux Kernel definitions: $err"
+        @warn "Failed to load Linux Kernel definitions: $err"
         false
     end
 else
@@ -41,7 +39,8 @@ import ..BPFnative: has_vmlinux
 import ..CBinding
 import ..CBinding: @c_str, Cptr
 if has_vmlinux
-    import ..VMLinux
+    import ..VMLinuxBindings
+    const VMLinux = VMLinuxBindings
 end
 @generated function offsetof(::Type{T}, ::Val{_field}) where {T<:CBinding.Cstruct,_field}
     offset = -1

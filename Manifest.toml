@@ -227,6 +227,12 @@ uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 [[Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
+[[VMLinuxBindings]]
+deps = ["CBinding"]
+git-tree-sha1 = "4f6d71c98437f60e2e8b99bf7b00a8864cf4f0ae"
+uuid = "3d5d7239-16b4-4651-96ed-9e800c796499"
+version = "0.1.2"
+
 [[XZ_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "9f76853ea2ba894054e24640abfb73d73e5a4cb5"
