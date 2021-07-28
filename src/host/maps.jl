@@ -174,6 +174,13 @@ end
 struct HostMapKeySet{K,V,H<:HostMap{K,V}}
     map::H
 end
+function Base.length(hk::HostMapKeySet)
+    ctr = 0
+    for key in hk
+        ctr += 1
+    end
+    ctr
+end
 Base.keys(map::H) where {K,V,H<:HostMap{K,V}} = HostMapKeySet{K,V,H}(map)
 Base.IteratorSize(::Type{<:HostMapKeySet}) = Base.SizeUnknown()
 Base.eltype(::Type{HostMapKeySet{K,V,H}}) where {K,V,H} = K
