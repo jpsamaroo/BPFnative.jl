@@ -203,8 +203,28 @@ end
 end
 run_root_tests = parse(Bool, get(ENV, "BPFNATIVE_ROOT_TESTS", "0"))
 if run_root_tests
+    # FIXME: Test with and without VMLinuxBindings
+    #@assert BPFnative.has_vmlinux
+
     test_file, test_io = mktemp(;cleanup=true)
     @info "Running root-only tests"
+
+    # Some useful toplevel defs
+    const myarrmap = RT.RTMap(;name="myarrmap",
+                               maptype=API.BPF_MAP_TYPE_ARRAY,
+                               keytype=UInt32,
+                               valuetype=UInt32,
+                               maxentries=1)
+    const myhashmap = RT.RTMap(;name="myhashmap",
+                                maptype=API.BPF_MAP_TYPE_HASH,
+                                keytype=UInt32,
+                                valuetype=UInt32,
+                                maxentries=1)
+    const mystrmap = RT.RTMap(;name="mystrmap",
+                               maptype=API.BPF_MAP_TYPE_HASH,
+                               keytype=UInt32,
+                               valuetype=NTuple{4,UInt8},
+                               maxentries=1)
     @testset "probes" begin
         @testset "kprobe" begin
             kp = KProbe("ksys_write") do regs
@@ -298,12 +318,11 @@ if run_root_tests
     end
     @testset "map interfacing" begin
         function kp_func(regs)
-            mymap = RT.RTMap(;name="mymap", maptype=API.BPF_MAP_TYPE_ARRAY, keytype=UInt32, valuetype=UInt32)
-            elem = mymap[1]
+            elem = myarrmap[1]
             if elem !== nothing
-                mymap[1] = 42
+                myarrmap[1] = 42
             else
-                mymap[1] = 1
+                myarrmap[1] = 1
             end
             return 0
         end
@@ -313,6 +332,49 @@ if run_root_tests
             hmap = Host.hostmap(map; K=UInt32, V=UInt32)
             write(test_io, "1"); flush(test_io)
             @test hmap[1] == 42
+
+            # Convenience ctor
+            hmap2 = Host.hostmap(kp.obj, myarrmap)
+            @test hmap.fd == hmap2.fd
+        end
+    end
+    @testset "map merging" begin
+        kp1 = KProbe("ksys_write") do regs
+            myhashmap[1] = 42
+            return 0
+        end
+        API.load(kp1)
+        kp2 = KProbe("ksys_write"; merge_with=(kp1.obj,)) do regs
+            if myhashmap[1] === nothing
+                myhashmap[1] = 43
+            end
+            return 0
+        end
+        API.load(kp2)
+        host_mymap1 = Host.hostmap(kp1.obj, myhashmap)
+        host_mymap2 = Host.hostmap(kp2.obj, myhashmap)
+        write(test_io, "1"); flush(test_io)
+        @test host_mymap1[1] == host_mymap2[1]
+        API.unload.((kp1, kp2))
+    end
+    @testset "memory intrinsics" begin
+        kp = KProbe("ksys_write") do regs
+            buf = RT.@create_string("hi!")
+            mystrmap[1] = ntuple(x->UInt8(0), 4)
+            key = Ref{UInt32}(1)
+            key_ptr = Base.unsafe_convert(Ptr{UInt32}, key)
+            GC.@preserve key begin
+                value_ptr = mystrmap[key_ptr]
+                if reinterpret(UInt64, value_ptr) != 0
+                    RT.memcpy!(value_ptr, pointer(buf), 4)
+                end
+            end
+            return 0
+        end
+        API.load(kp) do
+            host_mymap = Host.hostmap(kp.obj, mystrmap)
+            write(test_io, "1"); flush(test_io)
+            @test String(reinterpret(UInt8, collect(host_mymap[1]))) == "hi!\0"
         end
     end
     @testset "helpers" begin
@@ -508,8 +570,26 @@ if run_root_tests
                 @test haskey(counts, key)
                 # TODO: This is potentially racy
                 @test haskey(stacks, key.sid)
-                @test occursin("ksys_write", Host.stack_to_string(stacks[key.sid]))
+                @test occursin("sys_write", Host.stack_to_string(stacks[key.sid]))
             end
+        end
+    end
+    @testset "struct accessors" begin
+        kp = KProbe("ksys_write"; license="GPL") do ctx
+            task = RT.get_current_task()
+            reinterpret(UInt64, task) == 0 && return 1
+            cpu = RT.@elemptr(task.on_cpu[])
+            if cpu !== nothing
+                if cpu == RT.get_smp_processor_id()
+                    myhashmap[1] = cpu
+                end
+            end
+            0
+        end
+        API.load(kp) do
+            host_myhashmap = Host.hostmap(kp.obj, myhashmap)
+            write(test_io, "1"); flush(test_io)
+            @test haskey(host_myhashmap, 1)
         end
     end
 end
