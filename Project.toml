@@ -1,7 +1,7 @@
 name = "BPFnative"
 uuid = "b6338580-32ea-11e9-1791-33a79977d8c4"
 authors = ["Julian P Samaroo <jpsamaroo@jpsamaroo.me>"]
-version = "0.1.5"
+version = "0.1.6"
 
 [deps]
 CBinding = "d43a6710-96b8-4a2d-833c-c424785e5374"
@@ -11,18 +11,20 @@ LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
 Libbpf_jll = "02f9a84d-9555-5f1a-8c3c-42027521038d"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 
 [compat]
 CBinding = "1"
-GPUCompiler = "0.11"
-LLVM = "3.6"
+GPUCompiler = "0.12"
+LLVM = "4"
 Libbpf_jll = "0.3"
 Preferences = "1"
 julia = "1.6"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+UProbes = "fdc92b62-57bd-11e9-1326-e584eb179d13"
 
 [targets]
-test = ["Test"]
+test = ["Test", "UProbes"]

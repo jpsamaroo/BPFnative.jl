@@ -2,6 +2,7 @@ using BPFnative
 import BPFnative: API, RT, Host
 using Sockets
 using Test
+using UProbes
 
 # Useful for debugging libbpf loader failures
 if !isfile(joinpath(@__DIR__, "bpf-print.so"))
@@ -240,6 +241,34 @@ if run_root_tests
             end
             API.load(p)
             API.unload(p)
+        end
+        @testset "usdt" begin
+            function f(arg)
+                # FIXME: if @query(:julia, :test, typeof(arg))
+                    @probe(:julia, :test, arg)
+                #end
+                arg
+            end
+            f(1)
+            julia_path = Base.julia_cmd().exec[1]
+            usdt = USDT(getpid(), julia_path, "julia:test") do ctx
+                usdtmap = RT.RTMap(;name="usdtmap",
+                                    maptype=API.BPF_MAP_TYPE_HASH,
+                                    keytype=Int32,
+                                    valuetype=Int32,
+                                    maxentries=1)
+                usdtmap[1] = 1 # TODO: Get 1st (Cint) argument
+                0
+            end
+            API.load(usdt) do
+                f(1)
+                host_usdtmap = Host.hostmap(API.findmap(usdt.obj, "usdtmap"); K=Int32, V=Int32)
+                @test host_usdtmap[1] == 1
+                host_usdtmap[1] = 2
+                @test host_usdtmap[1] == 2
+                f(1)
+                @test host_usdtmap[1] == 1
+            end
         end
         # TODO: perf_event
         # TODO: xdp
