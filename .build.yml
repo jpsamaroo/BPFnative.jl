@@ -1,0 +1,19 @@
+image: archlinux
+packages:
+  - wget
+  - sudo
+  - libbpf
+  - bpf
+  - bpftrace
+sources:
+  - https://github.com/jpsamaroo/BPFnative.jl
+tasks:
+  - setup-julia: |
+      wget https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.2-linux-x86_64.tar.gz
+      tar xf julia-1.6.2-*
+      sudo ln -s $PWD/julia-1.6.2/bin/julia /usr/local/bin/julia
+  - build: |
+      cd BPFnative.jl
+      sudo julia -e 'using Pkg; Pkg.update()' >/dev/null 2>&1
+      sudo julia --project -e 'using Pkg; Pkg.instantiate()' >/dev/null 2>&1
+      sudo julia --project -e 'ENV["BPFNATIVE_ROOT_TESTS"] = "1"; using Pkg; Pkg.test("BPFnative")'
