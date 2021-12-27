@@ -12,6 +12,7 @@ const use_vmlinux = parse(Bool, @load_preference("use_vmlinux", "false"))
 if use_vmlinux
     const has_vmlinux = try
         using VMLinuxBindings
+        c"VMLinuxBindings.struct pt_regs"
         true
     catch err
         @warn "Failed to load Linux Kernel definitions: $err"
