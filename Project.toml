@@ -16,7 +16,7 @@ VMLinuxBindings = "3d5d7239-16b4-4651-96ed-9e800c796499"
 
 [compat]
 CBinding = "1"
-GPUCompiler = "0.12"
+GPUCompiler = "0.13"
 LLVM = "4"
 Libbpf_jll = "0.3"
 Preferences = "1"

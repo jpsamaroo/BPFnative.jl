@@ -53,6 +53,7 @@ function bpffunction_compile(@nospecialize(job::CompilerJob))
     # compile to BPF
     method_instance, world = GPUCompiler.emit_julia(job)
     ir, kernel = GPUCompiler.emit_llvm(job, method_instance; libraries=false)
+
     if format == :llvm
         return collect.(codeunits.(string.((ir, kernel)))) # TODO: Make more efficient
     elseif format == :asm
@@ -65,15 +66,30 @@ function bpffunction_compile(@nospecialize(job::CompilerJob))
 end
 bpffunction_link(@nospecialize(job::CompilerJob), exe) = exe
 
-function GPUCompiler.finish_module!(job::BPFCompilerJob, mod::LLVM.Module)
+function GPUCompiler.optimize_module!(job::BPFCompilerJob, mod::LLVM.Module)
+    # extra optimizations to kill uses of `gpu_signal_exception`
+    # GPUCompiler does this slightly too late, causing an LLVM abort due to the
+    # BPF target not supporting lowering of `llvm.trap`
+    ModulePassManager() do pm
+        global_optimizer!(pm)
+        global_dce!(pm)
+        strip_dead_prototypes!(pm)
+        run!(pm, mod)
+    end
+    for func in LLVM.functions(mod)
+        # validate no-throw
+        if LLVM.name(func) == "gpu_signal_exception" && length(collect(LLVM.uses(func))) > 0
+            throw(GPUCompiler.KernelError(job, "eBPF does not support exceptions"))
+        end
+    end
+    mod
+end
+function GPUCompiler.finish_module!(job::BPFCompilerJob, mod::LLVM.Module, entry::LLVM.Function)
     params = job.params
     license = params.license
     prog_section = params.prog_section
 
     for func in LLVM.functions(mod)
-        if LLVM.name(func) == "gpu_signal_exception"
-            throw(GPUCompiler.KernelError(job, "eBPF does not support exceptions"))
-        end
         # Set entry section for loaders like libbpf
         LLVM.section!(func, prog_section)
     end
@@ -105,6 +121,8 @@ function GPUCompiler.finish_module!(job::BPFCompilerJob, mod::LLVM.Module)
         add!(pm, FunctionPass("BPFHeapToStack", heap_to_stack!))
         run!(pm, mod)
     end
+
+    entry
 end
 
 "Validates LLVM contexts of all the things."
