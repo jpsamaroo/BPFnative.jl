@@ -9,7 +9,7 @@ sources:
   - https://github.com/jpsamaroo/BPFnative.jl
 tasks:
   - setup-julia: |
-      wget https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.2-linux-x86_64.tar.gz
+      wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.2-linux-x86_64.tar.gz
       tar xf julia-1.6.2-*
       sudo ln -s $PWD/julia-1.6.2/bin/julia /usr/local/bin/julia
   - build: |
