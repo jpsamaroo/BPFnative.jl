@@ -264,6 +264,9 @@ if has_vmlinux
 const pt_regs = c".VMLinux.struct pt_regs"
 pointertype(::Type{pt_regs}) = Cptr{pt_regs}
 
+const cpu_user_regs = c".VMLinux.struct cpu_user_regs"
+pointertype(::Type{cpu_user_regs}) = Cptr{cpu_user_regs}
+
 const xdp_md = c".VMLinux.struct xdp_md"
 pointertype(::Type{xdp_md}) = Cptr{xdp_md}
 
@@ -324,6 +327,8 @@ struct pt_regs
 end
 end # x86_64
 pointertype(::Type{pt_regs}) = Ptr{pt_regs}
+const cpu_user_regs = nothing
+pointertype(::Type{cpu_user_regs}) = Ptr{Nothing}
 
 ## XDP
 

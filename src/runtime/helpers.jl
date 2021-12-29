@@ -61,6 +61,8 @@ end
 @inline get_stack(ctx::T, buf::AbstractSizedBuffer, flags::UInt64) where {T} =
     bpfcall(API.get_stack, Clong, Tuple{T, BufPtr, UInt32, UInt64}, ctx, pointer(buf), length(buf), flags)
 
+@inline probe_read_user(dest::T, size::Integer, unsafe_ptr::T) where {T<:Ptr} =
+    bpfcall(API.probe_read_user, Clong, Tuple{T, UInt32, T}, dest, unsafe_trunc(UInt32, size), unsafe_ptr)
 @inline probe_read_kernel(dest::T, size::Integer, unsafe_ptr::T) where {T<:Ptr} =
     bpfcall(API.probe_read_kernel, Clong, Tuple{T, UInt32, T}, dest, unsafe_trunc(UInt32, size), unsafe_ptr)
 

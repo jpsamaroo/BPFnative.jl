@@ -271,18 +271,18 @@ if run_root_tests
             end
             f(1)
             julia_path = Base.julia_cmd().exec[1]
-            usdt = USDT(getpid(), julia_path, "julia:test") do ctx
-                usdtmap = RT.RTMap(;name="usdtmap",
-                                    maptype=API.BPF_MAP_TYPE_HASH,
-                                    keytype=Int32,
-                                    valuetype=Int32,
-                                    maxentries=1)
+            usdtmap = RT.RTMap(;name="usdtmap",
+                                maptype=API.BPF_MAP_TYPE_HASH,
+                                keytype=Int32,
+                                valuetype=Int32,
+                                maxentries=1)
+            usdt = USDT(getpid(), julia_path, "julia", "test") do ctx
                 usdtmap[1] = 1 # TODO: Get 1st (Cint) argument
                 0
             end
             API.load(usdt) do
                 f(1)
-                host_usdtmap = Host.hostmap(API.findmap(usdt.obj, "usdtmap"); K=Int32, V=Int32)
+                host_usdtmap = Host.hostmap(usdt, usdtmap)
                 @test host_usdtmap[1] == 1
                 host_usdtmap[1] = 2
                 @test host_usdtmap[1] == 2

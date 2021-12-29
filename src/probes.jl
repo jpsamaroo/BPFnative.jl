@@ -1,6 +1,7 @@
 export KProbe, USDT, Tracepoint, PerfEvent, XDP
 
 using Libdl
+using ObjectFile
 
 abstract type AbstractProbe end
 
@@ -30,6 +31,19 @@ function KProbe(f::Function, ::Type{T}, kfunc; merge_with=(), retprobe=false, kw
 end
 KProbe(f::Function, kfunc; kwargs...) =
     KProbe(f, Tuple{API.pointertype(API.pt_regs)}, kfunc; kwargs...)
+
+const NOTE_ARG_TYPE = @NamedTuple{size::Int,
+                                  signed::Bool,
+                                  reg::Symbol,
+                                  offset::Union{Int,Nothing}}
+const NOTE_TYPE = @NamedTuple{owner::String,
+                              location::UInt64,
+                              base::UInt64,
+                              semaphore::UInt64,
+                              provider::String,
+                              func::String,
+                              args::Vector{NOTE_ARG_TYPE}}
+
 struct UProbe#={F<:Function,T}=# <: AbstractProbe
     obj::API.Object
     pid::UInt32
@@ -65,42 +79,146 @@ struct USDT <: AbstractProbe
     pid::UInt32
     binpath::String
     addr::UInt64
+    args::Vector{NOTE_ARG_TYPE}
     retprobe::Bool
 end
-function USDT(f::Function, ::Type{T}, pid, binpath, addr::UInt64; merge_with=(), retprobe=false, kwargs...) where {T<:Tuple}
+primitive type USDTContext{P,T1,T2,T3,T4,T5} Sys.WORD_SIZE end
+@inline _context_reg(::Val{T}) where T = T
+function infer_reg_type(size, signed)
+    if size == 1
+        signed ? Int8 : UInt8
+    elseif size == 2
+        signed ? Int16 : UInt16
+    elseif size == 4
+        signed ? Int32 : UInt32
+    elseif size == 8
+        signed ? Int64 : UInt64
+    else
+        NTuple{size,UInt8}
+    end
+end
+@inline function API.get_param(ctx::USDTContext{P,T1,T2,T3,T4,T5}, ::Val{idx}) where {P,T1,T2,T3,T4,T5,idx}
+    @assert 1<=idx<=5
+    reg = idx == 1 ? T1 :
+          idx == 2 ? T2 :
+          idx == 3 ? T3 :
+          idx == 4 ? T4 : T5
+    reg = _context_reg(reg)
+    # FIXME: Size
+    ptr = reinterpret(P, ctx)
+    reg, offset, size, signed = reg
+    T = infer_reg_type(size, signed)
+    if offset !== nothing
+        ptr = unsafe_load(getproperty(ptr, reg))
+        ptr = reinterpret(Ptr{T}, ptr) + offset
+        dest = Ref{T}()
+        GC.@preserve dest begin
+            dest_ptr = Base.unsafe_convert(Ptr{T}, dest)
+            if RT.probe_read_user(dest_ptr, sizeof(T), ptr) == 0
+                return dest[]
+            else
+                return nothing
+            end
+        end
+    else
+        return unsafe_load(reinterpret(Ptr{T}, getproperty(ptr, reg)))
+    end
+end
+function USDT(f::Function, ::Type{T}, pid, binpath, addr::UInt64, args=[]; merge_with=(), retprobe=false, kwargs...) where {T<:Tuple}
     obj = API.Object(bpffunction(f, T; kwargs...))
     for other in merge_with
         merge_maps!(obj, other)
     end
     #foreach(prog->API.set_uprobe!(prog), API.programs(obj))
     foreach(prog->API.set_kprobe!(prog), API.programs(obj))
-    USDT(obj, pid, binpath, addr, retprobe)
+    USDT(obj, pid, binpath, addr, args, retprobe)
 end
-function USDT(f::Function, ::Type{T}, pid, binpath, func::String; retprobe=false, kwargs...) where {T<:Tuple}
+
+"Reads and returns the STAPSDT notes in the binary file `bin`."
+function read_notes(bin)
+    open(bin) do io
+        elf = readmeta(io)
+        sec = only(filter(x->section_name(x)==".note.stapsdt",
+                          collect(Sections(elf))))
+        sec_size = section_size(sec)
+
+        notes = NOTE_TYPE[]
+        seek(sec, 0)
+        pos = 0
+        off = position(io)
+        while pos < sec_size
+            # Extract fields
+            type = read(io, UInt32)
+            size = read(io, UInt32)
+            _ = read(io, UInt32)
+            owner = readuntil(io, '\0')
+            location = read(io, UInt64)
+            base = read(io, UInt64)
+            semaphore = read(io, UInt64)
+            provider = readuntil(io, '\0')
+            func = readuntil(io, '\0')
+            _args = readuntil(io, '\0')
+
+            # Parse arguments
+            _args = split(_args, ' ')
+            args = NOTE_ARG_TYPE[]
+            for arg in _args
+                m = match(r"([\-0-9]*)@([\-_0-9a-z]*)\(?%([a-z]*[0-9]*)\)?", arg)
+                if m !== nothing
+                    sz, offset, reg = m.captures
+                    sz = parse(Int, sz)
+                    signed = sz < 0
+                    sz = abs(sz)
+                    reg = Symbol(reg)
+                    if offset == ""
+                        offset = nothing
+                    else
+                        offset = try
+                            parse(Int, offset)
+                        catch
+                            0 # TODO: Is this right? This is probably PC-relative?
+                        end
+                    end
+                    push!(args, (;size=sz, signed, reg, offset))
+                else
+                    @assert isempty(arg) "Failed to parse argument: $arg"
+                end
+            end
+
+            push!(notes, (;owner, location, base, semaphore, provider, func, args))
+
+            # Seek to next note
+            pos += size + sizeof(owner)+1 + (4*3)
+            pos = cld(pos, 4) * 4
+            seek(io, off+pos)
+        end
+
+        notes
+    end
+end
+function USDT(f::Function, pid, binpath, provider::String, func::String; retprobe=false, kwargs...) where {T<:Tuple}
+    # FIXME: Find libs without bpftrace
     probes = String(read(`bpftrace -p $pid -l`))
-    probe_rgx = Regex("^usdt:/proc/$pid/root(.*):$func\$")
-    note_rgx = r"Location: ([0-9a-fx]*),"
+    probe_rgx = Regex("^usdt:/proc/$pid/root(.*):$provider:$func\$")
     for probe in split(probes, '\n')
         startswith(probe, "usdt:") || continue
-        if occursin(Regex("$func\$"), probe)
+        if occursin(Regex("$provider:$func\$"), probe)
             m = match(probe_rgx, probe)
             @assert m !== nothing "Unexpected bpftrace probe format"
             probe_file = m.captures[1]
-            notes = String(read(`readelf -n $probe_file`))
-            for line in split(notes, '\n')
-                m = match(note_rgx, line)
-                if m !== nothing
-                    addr = parse(UInt64, m.captures[1])
-                    return USDT(f, T, pid, probe_file, addr; retprobe, kwargs...)
-                end
-            end
-            throw(ArgumentError("Failed to find STAPSDT location in $probe_file"))
+            notes = read_notes(probe_file)
+            # TODO: Support multiple hook points
+            note = only(filter(x->x.func==func, notes))
+            addr = note.location
+            args = note.args
+            Ts = [Val(length(args) >= i ? (args[i].reg, args[i].offset, args[i].size, args[i].signed) : nothing) for i in 1:5]
+            P = API.pointertype(API.cpu_user_regs)
+            C = USDTContext{P,Ts...}
+            return USDT(f, Tuple{C}, pid, probe_file, addr, args; retprobe, kwargs...)
         end
     end
     throw(ArgumentError("Failed to find $func in $binpath for process $pid"))
 end
-USDT(f::Function, pid, binpath, func::String; kwargs...) =
-    USDT(f, Tuple{API.pointertype(API.pt_regs)}, pid, binpath, func; kwargs...)
 struct Tracepoint <: AbstractProbe
     obj::API.Object
     category::String
