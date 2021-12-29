@@ -9,9 +9,9 @@ sources:
   - https://github.com/jpsamaroo/BPFnative.jl
 tasks:
   - setup-julia: |
-      wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.2-linux-x86_64.tar.gz
-      tar xf julia-1.6.2-*
-      sudo ln -s $PWD/julia-1.6.2/bin/julia /usr/local/bin/julia
+      wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.7/julia-1.7.1-linux-x86_64.tar.gz
+      tar xf julia-1.7.1-*
+      sudo ln -s $PWD/julia-1.7.1/bin/julia /usr/local/bin/julia
   - build: |
       cd BPFnative.jl
       sudo julia -e 'using Pkg; Pkg.update()' >/dev/null 2>&1
