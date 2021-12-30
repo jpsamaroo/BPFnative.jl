@@ -4,10 +4,16 @@ using Libdl
 using ObjectFile
 
 abstract type AbstractProbe end
+objects(p::AbstractProbe) = [p.obj]
 
 "Merges maps from `other` into `obj`."
-function merge_maps!(obj, other)
-    for other_map in API.maps(other)
+function merge_maps!(obj, other::AbstractProbe)
+    for other_obj in objects(other)
+        merge_maps!(obj, other_obj)
+    end
+end
+function merge_maps!(obj, other_obj::API.Object)
+    for other_map in API.maps(other_obj)
         for our_map in API.maps(obj)
             if API.name(our_map) == API.name(other_map)
                 API.reuse_fd(our_map, API.fd(other_map))
@@ -15,6 +21,12 @@ function merge_maps!(obj, other)
         end
     end
 end
+
+struct ProbeSet <: AbstractProbe
+    probes::Vector{AbstractProbe}
+end
+ProbeSet() = ProbeSet(AbstractProbe[])
+objects(p::ProbeSet) = vcat(map(objects, p.probes)...)
 
 struct KProbe <: AbstractProbe
     obj::API.Object
@@ -78,6 +90,7 @@ struct USDT <: AbstractProbe
     obj::API.Object
     pid::UInt32
     binpath::String
+    func::String
     addr::UInt64
     args::Vector{NOTE_ARG_TYPE}
     retprobe::Bool
@@ -104,7 +117,6 @@ end
           idx == 3 ? T3 :
           idx == 4 ? T4 : T5
     reg = _context_reg(reg)
-    # FIXME: Size
     ptr = reinterpret(P, ctx)
     reg, offset, size, signed = reg
     T = infer_reg_type(size, signed)
@@ -124,14 +136,20 @@ end
         return unsafe_load(reinterpret(Ptr{T}, getproperty(ptr, reg)))
     end
 end
-function USDT(f::Function, ::Type{T}, pid, binpath, addr::UInt64, args=[]; merge_with=(), retprobe=false, kwargs...) where {T<:Tuple}
-    obj = API.Object(bpffunction(f, T; kwargs...))
+function USDT(f::Function, pid, binpath, note::NOTE_TYPE; merge_with=(), retprobe=false, kwargs...)
+    func = note.func
+    addr = note.location
+    args = note.args
+    Ts = [Val(length(args) >= i ? (args[i].reg, args[i].offset, args[i].size, args[i].signed) : nothing) for i in 1:5]
+    P = API.pointertype(API.cpu_user_regs)
+    C = USDTContext{P,Ts...}
+    obj = API.Object(bpffunction(f, Tuple{C}; kwargs...))
     for other in merge_with
         merge_maps!(obj, other)
     end
     #foreach(prog->API.set_uprobe!(prog), API.programs(obj))
     foreach(prog->API.set_kprobe!(prog), API.programs(obj))
-    USDT(obj, pid, binpath, addr, args, retprobe)
+    USDT(obj, pid, binpath, func, addr, args, retprobe)
 end
 
 "Reads and returns the STAPSDT notes in the binary file `bin`."
@@ -196,7 +214,7 @@ function read_notes(bin)
         notes
     end
 end
-function USDT(f::Function, pid, binpath, provider::String, func::String; retprobe=false, kwargs...) where {T<:Tuple}
+function USDT(f::Function, pid, binpath, provider::String, func::String; retprobe=false, multi=true, kwargs...)
     # FIXME: Find libs without bpftrace
     probes = String(read(`bpftrace -p $pid -l`))
     probe_rgx = Regex("^usdt:/proc/$pid/root(.*):$provider:$func\$")
@@ -206,15 +224,19 @@ function USDT(f::Function, pid, binpath, provider::String, func::String; retprob
             m = match(probe_rgx, probe)
             @assert m !== nothing "Unexpected bpftrace probe format"
             probe_file = m.captures[1]
-            notes = read_notes(probe_file)
-            # TODO: Support multiple hook points
-            note = only(filter(x->x.func==func, notes))
-            addr = note.location
-            args = note.args
-            Ts = [Val(length(args) >= i ? (args[i].reg, args[i].offset, args[i].size, args[i].signed) : nothing) for i in 1:5]
-            P = API.pointertype(API.cpu_user_regs)
-            C = USDTContext{P,Ts...}
-            return USDT(f, Tuple{C}, pid, probe_file, addr, args; retprobe, kwargs...)
+            notes = filter(x->x.func==func, read_notes(probe_file))
+            if multi
+                probes = ProbeSet()
+                for note in filter(x->x.func==func, notes)
+                    probe = USDT(f, pid, probe_file, note; retprobe, kwargs...)
+                    push!(probes.probes, probe)
+                end
+                return probes
+            else
+                @assert length(notes) <= 1 "Multiple probe points found for $func"
+                note = only(notes)
+                return USDT(f, pid, probe_file, note; retprobe, kwargs...)
+            end
         end
     end
     throw(ArgumentError("Failed to find $func in $binpath for process $pid"))
@@ -235,18 +257,29 @@ end
 Tracepoint(f::Function, category, name; kwargs...) =
     Tracepoint(f, Tuple{API.pointertype(API.pt_regs)}, category, name; kwargs...)
 
+function Base.show(io::IO, p::ProbeSet)
+    n = length(p.probes)
+    println(io, "ProbeSet ($n probes):")
+    for idx in 1:n
+        print(io, "  ")
+        show(io, p.probes[idx])
+        idx < n && println(io)
+    end
+end
 Base.show(io::IO, p::KProbe) =
     print(io, "KProbe ($(p.kfunc))")
 Base.show(io::IO, p::UProbe) =
     print(io, "UProbe ($(p.addr) @ $(repr(p.binpath)))")
 Base.show(io::IO, p::USDT) =
-    print(io, "USDT (path $(p.binpath), pid $(p.pid))")
+    print(io, "USDT ($(p.func) @ $(p.binpath) (pid $(p.pid)))")
 Base.show(io::IO, p::Tracepoint) =
     print(io, "Tracepoint ($(p.category)/$(p.name))")
 
+API.load(p::ProbeSet) = foreach(API.load, p.probes)
 function API.load(p::KProbe)
     API.load(p.obj)
-    foreach(prog->API.attach_kprobe!(prog, p.retprobe, p.kfunc), API.programs(p.obj))
+    foreach(prog->API.attach_kprobe!(prog, p.retprobe, p.kfunc),
+            API.programs(p.obj))
 end
 #=
 function API.load(p::UProbe)
@@ -276,3 +309,4 @@ end
 function API.unload(p::AbstractProbe)
     API.unload(p.obj)
 end
+API.unload(p::ProbeSet) = foreach(API.unload, p.probes)
