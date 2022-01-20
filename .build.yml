@@ -15,5 +15,5 @@ tasks:
   - build: |
       cd BPFnative.jl
       sudo julia -e 'using Pkg; Pkg.update()' >/dev/null 2>&1
-      sudo julia --project -e 'using Pkg; Pkg.instantiate()' >/dev/null 2>&1
-      sudo julia --project -e 'ENV["BPFNATIVE_ROOT_TESTS"] = "1"; ENV["JULIA_DEBUG"] = "BPFnative"; using Pkg; Pkg.test("BPFnative")'
+      sudo julia --project -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]="0"; using Pkg; Pkg.instantiate()' >/dev/null 2>&1
+      sudo julia --project -e 'ENV["JULIA_PKG_PRECOMPILE_AUTO"]="0"; ENV["BPFNATIVE_ROOT_TESTS"] = "1"; ENV["JULIA_DEBUG"] = "BPFnative"; using Pkg; Pkg.test("BPFnative")'
