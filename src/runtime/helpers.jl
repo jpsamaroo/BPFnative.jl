@@ -55,6 +55,9 @@ end
 @inline get_current_comm(buf::AbstractSizedBuffer) =
     bpfcall(API.get_current_comm, Clong, Tuple{BufPtr, UInt32}, pointer(buf), length(buf))
 
+@inline perf_event_output(ctx::T, map::M, flags, buf::AbstractSizedBuffer) where {T, M<:RTMap} =
+    bpfcall(API.perf_event_output, Clong, Tuple{T, M, UInt64, BufPtr, UInt64}, ctx, map, unsafe_trunc(UInt64, flags), pointer(buf), length(buf))
+
 @inline get_stackid(ctx::T, map::M, flags::Integer) where {T,M<:RTMap} =
     unsafe_trunc(Int32, bpfcall(API.get_stackid, Clong, Tuple{T, M, UInt64}, ctx, map, unsafe_trunc(UInt64,flags)))
 @inline get_current_task() = bpfcall(API.get_current_task, ptr_task_struct)

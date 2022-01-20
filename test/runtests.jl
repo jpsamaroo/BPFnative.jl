@@ -225,6 +225,23 @@ if run_root_tests
                                keytype=UInt32,
                                valuetype=NTuple{4,UInt8},
                                maxentries=1)
+    struct PerfBlob
+        pid::UInt64
+        cookie::UInt64
+    end
+    const myperfmap = RT.RTMap(;name="myperfmap",
+                                maptype=API.BPF_MAP_TYPE_PERF_EVENT_ARRAY,
+                                keytype=Cint,
+                                valuetype=UInt32,
+                                maxentries=2)
+    function perf_sample_cb(ctx::Ptr{Bool}, cpu::Cint, data::Ptr{PerfBlob}, size::UInt32)
+        data = unsafe_load(data)
+        @test size >= sizeof(PerfBlob)
+        @test data.cookie == 0x12345678
+        unsafe_store!(ctx, true)
+        nothing
+    end
+    perf_sample_cb_ptr = @eval @cfunction(perf_sample_cb, Nothing, (Ptr{Bool}, Cint, Ptr{PerfBlob}, UInt32))
     @testset "probes" begin
         @testset "kprobe" begin
             kp = KProbe("ksys_write") do regs
@@ -543,6 +560,30 @@ if run_root_tests
             end
         end
         # TODO: get_current_comm
+        @testset "perf_event_output" begin
+            # From Linux's samples/bpf/trace_output_*
+            kp = KProbe("ksys_write"; license="GPL") do ctx
+                buf = RT.create_buffer(sizeof(PerfBlob))
+                GC.@preserve buf begin
+                    buf_ptr = reinterpret(Ptr{PerfBlob}, pointer(buf))
+                    unsafe_store!(buf_ptr, PerfBlob(0x42, 0x12345678))
+                end
+                RT.perf_event_output(ctx, myperfmap, 0, buf)
+                0
+            end
+            API.load(kp) do
+                map = first(API.maps(kp.obj))
+                cb_ref = Ref{Bool}(false)
+                GC.@preserve cb_ref begin
+                    pb = Host.PerfBuffer{Cint,UInt32}(API.fd(map), 8; sample_cb=perf_sample_cb_ptr, ctx=Base.unsafe_convert(Ptr{Bool}, cb_ref))
+                    for i in 1:10
+                        Host.poll(pb, 100)
+                        write(test_io, "1"); flush(test_io)
+                    end
+                    @test cb_ref[]
+                end
+            end
+        end
         @testset "get_stackid" begin
             # from BCC's stackcount
             struct StackKey
