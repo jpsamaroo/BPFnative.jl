@@ -279,33 +279,37 @@ if run_root_tests
             API.load(p)
             API.unload(p)
         end
-        @testset "usdt" begin
-            function f(arg)
-                # FIXME: if @query(:julia, :test, typeof(arg))
-                    @probe(:julia, :test, arg)
-                #end
-                arg
-            end
-            f(1)
-            julia_path = Base.julia_cmd().exec[1]
-            usdtmap = RT.RTMap(;name="usdtmap",
-                                maptype=API.BPF_MAP_TYPE_HASH,
-                                keytype=Int32,
-                                valuetype=Int32,
-                                maxentries=1)
-            usdt = USDT(getpid(), julia_path, "julia", "test") do ctx
-                usdtmap[1] = 1 # TODO: Get 1st (Cint) argument
-                0
-            end
-            API.load(usdt) do
+        if BPFnative.has_vmlinux
+            @testset "usdt" begin
+                function f(arg)
+                    # FIXME: if @query(:julia, :test, typeof(arg))
+                        @probe(:julia, :test, arg)
+                    #end
+                    arg
+                end
                 f(1)
-                host_usdtmap = Host.hostmap(usdt, usdtmap)
-                @test host_usdtmap[1] == 1
-                host_usdtmap[1] = 2
-                @test host_usdtmap[1] == 2
-                f(1)
-                @test host_usdtmap[1] == 1
+                julia_path = Base.julia_cmd().exec[1]
+                usdtmap = RT.RTMap(;name="usdtmap",
+                                    maptype=API.BPF_MAP_TYPE_HASH,
+                                    keytype=Int32,
+                                    valuetype=Int32,
+                                    maxentries=1)
+                usdt = USDT(getpid(), julia_path, "julia", "test") do ctx
+                    usdtmap[1] = 1 # TODO: Get 1st (Cint) argument
+                    0
+                end
+                API.load(usdt) do
+                    f(1)
+                    host_usdtmap = Host.hostmap(usdt, usdtmap)
+                    @test host_usdtmap[1] == 1
+                    host_usdtmap[1] = 2
+                    @test host_usdtmap[1] == 2
+                    f(1)
+                    @test host_usdtmap[1] == 1
+                end
             end
+        else
+            @test_skip "USDT"
         end
         # TODO: perf_event
         # TODO: xdp
@@ -615,22 +619,26 @@ if run_root_tests
             end
         end
     end
-    @testset "struct accessors" begin
-        kp = KProbe("ksys_write"; license="GPL") do ctx
-            task = RT.get_current_task()
-            reinterpret(UInt64, task) == 0 && return 1
-            cpu = RT.@elemptr(task.on_cpu[])
-            if cpu !== nothing
-                if cpu == RT.get_smp_processor_id()
-                    myhashmap[1] = cpu
+    if BPFnative.has_vmlinux
+        @testset "struct accessors" begin
+            kp = KProbe("ksys_write"; license="GPL") do ctx
+                task = RT.get_current_task()
+                reinterpret(UInt64, task) == 0 && return 1
+                cpu = RT.@elemptr(task.on_cpu[])
+                if cpu !== nothing
+                    if cpu == RT.get_smp_processor_id()
+                        myhashmap[1] = cpu
+                    end
                 end
+                0
             end
-            0
+            API.load(kp) do
+                host_myhashmap = Host.hostmap(kp.obj, myhashmap)
+                write(test_io, "1"); flush(test_io)
+                @test haskey(host_myhashmap, 1)
+            end
         end
-        API.load(kp) do
-            host_myhashmap = Host.hostmap(kp.obj, myhashmap)
-            write(test_io, "1"); flush(test_io)
-            @test haskey(host_myhashmap, 1)
-        end
+    else
+        @test_skip "struct accessors"
     end
 end
