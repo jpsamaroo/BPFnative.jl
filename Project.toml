@@ -10,20 +10,17 @@ InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
 Libbpf_jll = "02f9a84d-9555-5f1a-8c3c-42027521038d"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+ObjectFile = "d8793406-e978-5875-9003-1fc021f44a92"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+VMLinuxBindings = "3d5d7239-16b4-4651-96ed-9e800c796499"
 
 [compat]
 CBinding = "1"
-GPUCompiler = "0.12"
+GPUCompiler = "0.13"
 LLVM = "4"
 Libbpf_jll = "0.3"
+ObjectFile = "0.3"
 Preferences = "1"
-julia = "1.6"
-
-[extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-UProbes = "fdc92b62-57bd-11e9-1326-e584eb179d13"
-
-[targets]
-test = ["Test", "UProbes"]
+VMLinuxBindings = "0.1.2"
+julia = "1.7"

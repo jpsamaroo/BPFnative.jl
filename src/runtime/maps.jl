@@ -2,7 +2,7 @@ function map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,
     keyref = ZeroInitRef(K, key)
     GC.@preserve keyref begin
         keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
-        _map_lookup_elem(map, keyref_ptr)
+        map_lookup_elem(map, keyref_ptr)
     end
 end
 @inline function map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K, value::V, flags::UInt64) where {Name,MT,K,V,ME,F}
@@ -11,19 +11,19 @@ end
     GC.@preserve keyref valref begin
         keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
         valref_ptr = Base.unsafe_convert(Ptr{V}, valref)
-        _map_update_elem(map, keyref_ptr, valref_ptr, flags)
+        map_update_elem(map, keyref_ptr, valref_ptr, flags)
     end
 end
 function map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::K) where {Name,MT,K,V,ME,F}
     keyref = ZeroInitRef(K, key)
     GC.@preserve keyref begin
         keyref_ptr = Base.unsafe_convert(Ptr{K}, keyref)
-        _map_delete_elem(map, Base.unsafe_convert(Ptr{K}, keyref))
+        map_delete_elem(map, Base.unsafe_convert(Ptr{K}, keyref))
     end
 end
 
 # TODO: Use bpfcall
-@generated function _map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
+@generated function map_lookup_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
     Context() do ctx
         T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
         T_valp = LLVM.PointerType(convert(LLVMType, V; ctx))
@@ -49,7 +49,7 @@ end
         call_function(llvm_f, Ptr{V}, Tuple{Ptr{K}}, :key)
     end
 end
-@generated function _map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}, val::Ptr{V}, flags::UInt64) where {Name,MT,K,V,ME,F}
+@generated function map_update_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}, val::Ptr{V}, flags::UInt64) where {Name,MT,K,V,ME,F}
     Context() do ctx
         T_cint = convert(LLVMType, Cint; ctx)
         T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
@@ -77,7 +77,7 @@ end
         call_function(llvm_f, Cint, Tuple{Ptr{K},Ptr{V},UInt64}, :key, :val, :flags)
     end
 end
-@generated function _map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
+@generated function map_delete_elem(map::RTMap{Name,MT,K,V,ME,F}, key::Ptr{K}) where {Name,MT,K,V,ME,F}
     Context() do ctx
         T_cint = convert(LLVMType, Cint; ctx)
         T_keyp = LLVM.PointerType(convert(LLVMType, K; ctx))
@@ -127,6 +127,8 @@ end
 
 @inline Base.getindex(map::RTMap{Name,MT,K,V,ME,F}, idx) where {Name,MT,K,V,ME,F} =
     getindex(map, bpfconvert(K, idx))
+@inline Base.getindex(map::RTMap{Name,MT,K,V,ME,F}, idx_ptr::Ptr{K}) where {Name,MT,K,V,ME,F} =
+    map_lookup_elem(map, idx_ptr)
 Base.getindex(map::RTMap, ::Nothing) = nothing
 @inline function Base.getindex(map::AbstractHashMap{Name,MT,K,V,ME,F}, idx::K) where {Name,MT,K,V,ME,F}
     ptr = map_lookup_elem(map, idx)
@@ -151,6 +153,22 @@ end
 
 @inline Base.setindex!(map::RTMap{Name,MT,K,V,ME,F}, value, idx) where {Name,MT,K,V,ME,F} =
     setindex!(map, bpfconvert(V, value), bpfconvert(K, idx))
+@inline function Base.setindex!(map::RTMap{Name,MT,K,V,ME,F}, value, idx_ptr::Ptr{K}) where {Name,MT,K,V,ME,F}
+    value_ref = ZeroInitRef(V, bpfconvert(V, value))
+    GC.@preserve value_ref begin
+        value_ptr = Base.unsafe_convert(Ptr{V}, value_ref)
+        map_update_elem(map, idx_ptr, value_ptr, UInt64(0))
+    end
+end
+@inline function Base.setindex!(map::RTMap{Name,MT,K,V,ME,F}, value_ptr::Ptr{V}, idx) where {Name,MT,K,V,ME,F}
+    idx_ref = ZeroInitRef(K, bpfconvert(K, idx))
+    GC.@preserve idx_ref begin
+        idx_ptr = Base.unsafe_convert(Ptr{K}, idx_ref)
+        map_update_elem(map, idx_ptr, value_ptr, UInt64(0))
+    end
+end
+@inline Base.setindex!(map::RTMap{Name,MT,K,V,ME,F}, value_ptr::Ptr{V}, idx_ptr::Ptr{K}) where {Name,MT,K,V,ME,F} =
+    map_update_elem(map, idx_ptr, value_ptr, UInt64(0))
 @inline Base.setindex!(map::RTMap, ::Nothing, idx) = nothing
 @inline Base.setindex!(map::RTMap, value, ::Nothing) = nothing
 @inline Base.setindex!(map::RTMap, ::Nothing, ::Nothing) = nothing

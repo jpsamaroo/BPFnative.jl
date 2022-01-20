@@ -1,6 +1,7 @@
 abstract type HostMap{K,V} end
 abstract type AbstractHashMap{K,V} <: HostMap{K,V} end
 abstract type AbstractArrayMap{K,V} <: HostMap{K,V} end
+abstract type AbstractBufferMap{K,V} <: HostMap{K,V} end
 
 function hostmap(map::API.Map; K, V)
     fd = API.fd(map)
@@ -20,6 +21,38 @@ struct ArrayMap{K,V} <: AbstractArrayMap{K,V}
     fd::Cint
 end
 maptype_to_jltype(::Val{API.BPF_MAP_TYPE_ARRAY}) = ArrayMap
+
+# perf buffers
+
+const perf_buffer = Ptr{Cvoid}
+struct PerfBuffer{K,V} <: AbstractBufferMap{K,V}
+    fd::Cint
+    buf::perf_buffer
+end
+PerfBuffer{K,V}(fd) where {K,V} = PerfBuffer{K,V}(fd, 8)
+maptype_to_jltype(::Val{API.BPF_MAP_TYPE_PERF_EVENT_ARRAY}) = PerfBuffer
+Base.@kwdef struct perf_buffer_opts
+    sample_cb::Ptr{Cvoid} = C_NULL
+    lost_cb::Ptr{Cvoid} = C_NULL
+    ctx::Ptr{Cvoid} = C_NULL
+end
+
+function PerfBuffer{K,V}(map_fd::Cint, page_cnt::Integer, opts::perf_buffer_opts) where {K,V}
+    opts_ref = Ref{perf_buffer_opts}(opts)
+    buf = GC.@preserve opts_ref begin
+        opts_ptr = Base.unsafe_convert(Ptr{perf_buffer_opts}, opts_ref)
+        ccall((:perf_buffer__new, API.libbpf), perf_buffer, (Cint,Csize_t,Ptr{perf_buffer_opts}), map_fd, Csize_t(page_cnt), opts_ptr)
+    end
+    @assert Int(buf) > 0
+    PerfBuffer{K,V}(map_fd, buf)
+end
+function PerfBuffer{K,V}(map_fd::Cint, page_cnt::Integer; sample_cb=C_NULL, lost_cb=C_NULL, ctx=C_NULL) where {K,V}
+    opts = perf_buffer_opts(sample_cb, lost_cb, ctx)
+    PerfBuffer{K,V}(map_fd, page_cnt, opts)
+end
+function poll(buf::PerfBuffer, timeout_ms::Integer)
+    ccall((:perf_buffer__poll, API.libbpf), Cint, (perf_buffer,Cint), buf.buf, Cint(timeout_ms))
+end
 
 struct map_create_attr
     map_type::UInt32
@@ -173,6 +206,13 @@ end
 
 struct HostMapKeySet{K,V,H<:HostMap{K,V}}
     map::H
+end
+function Base.length(hk::HostMapKeySet)
+    ctr = 0
+    for key in hk
+        ctr += 1
+    end
+    ctr
 end
 Base.keys(map::H) where {K,V,H<:HostMap{K,V}} = HostMapKeySet{K,V,H}(map)
 Base.IteratorSize(::Type{<:HostMapKeySet}) = Base.SizeUnknown()

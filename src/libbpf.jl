@@ -16,10 +16,6 @@ const bpf_map = Ptr{Cvoid}
 struct Map
     map::bpf_map
 end
-const perf_buffer = Ptr{Cvoid}
-struct PerfBuffer
-    buf::perf_buffer
-end
 
 @enum libbpf_print_level begin
     LIBBPF_WARN
@@ -28,6 +24,12 @@ end
 end
 
 bpfprintfn(fn) = ccall((:libbpf_set_print, libbpf), Ptr{Cvoid}, (Ptr{Cvoid},), fn)
+
+function libbpf_strerror(ret)
+    buf = Vector{UInt8}(undef, 64)
+    ccall((:libbpf_strerror, libbpf), Cint, (Cint, Ptr{UInt8}, Csize_t), ret, buf, 64)
+    String(buf)
+end
 
 Base.@kwdef struct bpf_object_open_opts
     sz::Csize_t = sizeof(bpf_object_open_opts)
@@ -137,8 +139,8 @@ function resize!(map::Map, sz::Integer)
     nothing
 end
 function reuse_fd(map::Map, fd::Integer)
-    ret = ccall((:bpf_map_reuse_fd, libbpf), Cint, (bpf_map,Cint), map[], Cint(fd))
-    @assert ret == 0
+    ret = ccall((:bpf_map__reuse_fd, libbpf), Cint, (bpf_map,Cint), map[], Cint(fd))
+    @assert ret == 0 "$(libbpf_strerror(ret))"
     nothing
 end
 
@@ -215,27 +217,6 @@ function attach_tracepoint!(prog::Program, category::String, name::String)
     link = ccall((:bpf_program__attach_tracepoint, libbpf), bpf_link, (bpf_program, Cstring, Cstring), prog[], category, name)
     @assert Int(link) > 0
     Link(link)
-end
-
-# perf buffers
-
-Base.@kwdef struct perf_buffer_opts
-    sample_cb::Ptr{Cvoid} = C_NULL
-    lost_cb::Ptr{Cvoid} = C_NULL
-    ctx::Ptr{Cvoid} = C_NULL
-end
-
-function PerfBuffer(map_fd::Cint, page_cnt::Integer, opts::perf_buffer_opts=perf_buffer_opts())
-    opts_ref = Ref{perf_buffer_opts}(opts)
-    buf = GC.@preserve opts_ref begin
-        opts_ptr = Base.unsafe_convert(Ptr{perf_buffer_opts}, opts_ref)
-        ccall((:perf_buffer__new, libbpf), perf_buffer, (Cint,Csize_t,Ptr{perf_buffer_opts}), map_fd, Csize_t(page_cnt), opts_ptr)
-    end
-    @assert Int(buf) > 0
-    PerfBuffer(buf)
-end
-function poll(buf::PerfBuffer, timeout_ms::Integer)
-    ccall((:perf_buffer__poll, libbpf), Cint, (perf_buffer,Cint), buf[], Cint(timeout_ms))
 end
 
 ## user-facing API

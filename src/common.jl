@@ -264,17 +264,48 @@ if has_vmlinux
 const pt_regs = c".VMLinux.struct pt_regs"
 pointertype(::Type{pt_regs}) = Cptr{pt_regs}
 
+const cpu_user_regs = c".VMLinux.struct cpu_user_regs"
+pointertype(::Type{cpu_user_regs}) = Cptr{cpu_user_regs}
+
 const xdp_md = c".VMLinux.struct xdp_md"
 pointertype(::Type{xdp_md}) = Cptr{xdp_md}
 
 const sk_buff = c".VMLinux.struct sk_buff"
 pointertype(::Type{sk_buff}) = Cptr{sk_buff}
 
+const task_struct = c".VMLinux.struct task_struct"
+pointertype(::Type{task_struct}) = Cptr{task_struct}
+
 else
 
 ## Perf/Ptrace
 
 # TODO: pt_regs for other architectures
+if Sys.ARCH == :x86_64
+struct pt_regs
+    r15::Culong
+    r14::Culong
+    r13::Culong
+    r12::Culong
+    rbp::Culong
+    rbx::Culong
+    r11::Culong
+    r10::Culong
+    r9::Culong
+    r8::Culong
+    rax::Culong
+    rcx::Culong
+    rdx::Culong
+    rsi::Culong
+    rdi::Culong
+    orig_rax::Culong
+    rip::Culong
+    cs::Culong
+    eflags::Culong
+    rsp::Culong
+    ss::Culong
+end
+else
 struct pt_regs
     ebx::Clong
     ecx::Clong
@@ -294,7 +325,10 @@ struct pt_regs
     esp::Clong
     xss::Cint
 end
+end # x86_64
 pointertype(::Type{pt_regs}) = Ptr{pt_regs}
+const cpu_user_regs = nothing
+pointertype(::Type{cpu_user_regs}) = Ptr{Nothing}
 
 ## XDP
 
@@ -347,4 +381,23 @@ struct sk_buff
 end
 pointertype(::Type{sk_buff}) = Ptr{sk_buff}
 
+const task_struct = Nothing
+pointertype(::Type{task_struct}) = Ptr{task_struct}
+
+end
+
+@inline get_param(ctx::Cptr, ::Val{idx}) where idx =
+    unsafe_load(_get_param(ctx, Val(idx)))
+@inline get_param(ctx::Ptr, ::Val{idx}) where idx =
+    _get_param(unsafe_load(ctx), Val(idx))
+
+@static if Sys.ARCH == :x86_64
+function _get_param(ctx, ::Val{idx}) where idx
+    @assert 1 <= idx <= 5 "Invalid parameter index: $idx"
+    idx == 1 && return ctx.di
+    idx == 2 && return ctx.si
+    idx == 3 && return ctx.dx
+    idx == 4 && return ctx.cx
+    idx == 5 && return ctx.r8
+end
 end

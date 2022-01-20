@@ -1,7 +1,7 @@
 # BPF helpers
 
 const ptr_sk_buff = API.pointertype(API.sk_buff)
-const ptr_task_struct = Ptr{Cvoid} #API.pointertype(API.task_struct)
+const ptr_task_struct = API.pointertype(API.task_struct)
 
 bpfconvert(x) = x
 bpfconvert(x::AbstractBuffer) = pointer(x)
@@ -55,18 +55,20 @@ end
 @inline get_current_comm(buf::AbstractSizedBuffer) =
     bpfcall(API.get_current_comm, Clong, Tuple{BufPtr, UInt32}, pointer(buf), length(buf))
 
+@inline perf_event_output(ctx::T, map::M, flags, buf::AbstractSizedBuffer) where {T, M<:RTMap} =
+    bpfcall(API.perf_event_output, Clong, Tuple{T, M, UInt64, BufPtr, UInt64}, ctx, map, unsafe_trunc(UInt64, flags), pointer(buf), length(buf))
+
 @inline get_stackid(ctx::T, map::M, flags::Integer) where {T,M<:RTMap} =
-    bpfcall(API.get_stackid, Clong, Tuple{T, M, UInt64}, ctx, map, unsafe_trunc(UInt64,flags))
-@inline function get_current_task()
-    res = bpfcall(API.get_current_task, UInt64)
-    if res > 0
-        unsafe_load(reinterpret(ptr_task_struct, res))
-    else
-        nothing
-    end
-end
+    unsafe_trunc(Int32, bpfcall(API.get_stackid, Clong, Tuple{T, M, UInt64}, ctx, map, unsafe_trunc(UInt64,flags)))
+@inline get_current_task() = bpfcall(API.get_current_task, ptr_task_struct)
 @inline get_stack(ctx::T, buf::AbstractSizedBuffer, flags::UInt64) where {T} =
     bpfcall(API.get_stack, Clong, Tuple{T, BufPtr, UInt32, UInt64}, ctx, pointer(buf), length(buf), flags)
+
+@inline probe_read_user(dest::T, size::Integer, unsafe_ptr::T) where {T<:Ptr} =
+    bpfcall(API.probe_read_user, Clong, Tuple{T, UInt32, T}, dest, unsafe_trunc(UInt32, size), unsafe_ptr)
+@inline probe_read_kernel(dest::T, size::Integer, unsafe_ptr::T) where {T<:Ptr} =
+    bpfcall(API.probe_read_kernel, Clong, Tuple{T, UInt32, T}, dest, unsafe_trunc(UInt32, size), unsafe_ptr)
+
 @inline get_task_stack(ctx::ptr_task_struct, buf::AbstractSizedBuffer, flags::UInt64) where {T} =
     bpfcall(API.get_task_stack, Clong, Tuple{ptr_task_struct, BufPtr, UInt32, UInt64}, ctx, pointer(buf), length(buf), flags)
 

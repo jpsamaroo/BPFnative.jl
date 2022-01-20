@@ -11,12 +11,11 @@ using Preferences
 const use_vmlinux = parse(Bool, @load_preference("use_vmlinux", "false"))
 if use_vmlinux
     const has_vmlinux = try
-        @debug "Loading vmlinux..."
-        vmlinux_load_time = @timed include("vmlinux.jl")
-        @debug "Loaded vmlinux in $(vmlinux_load_time.time) seconds"
+        using VMLinuxBindings
+        c"VMLinuxBindings.struct pt_regs"
         true
     catch err
-        @warn "Failed to load/generate Linux Kernel definitions: $err"
+        @warn "Failed to load Linux Kernel definitions: $err"
         false
     end
 else
@@ -41,21 +40,10 @@ import ..BPFnative: has_vmlinux
 import ..CBinding
 import ..CBinding: @c_str, Cptr
 if has_vmlinux
-    import ..VMLinux
+    import ..VMLinuxBindings
+    const VMLinux = VMLinuxBindings
 end
-@generated function offsetof(::Type{T}, ::Val{_field}) where {T<:CBinding.Cstruct,_field}
-    offset = -1
-    for field in CBinding.fields(T).parameters
-        if field.parameters[1] == _field
-            offset = field.parameters[2].parameters[4]
-        end
-    end
-    @assert offset >= 0 "Failed to find offset of $_field in $T"
-    :($offset)
-end
-macro offsetof(T, field)
-    :($offsetof($T, Val($field)))
-end
+include("utils.jl")
 include("common.jl")
 include("libbpf.jl")
 if Sys.islinux()
@@ -69,12 +57,16 @@ import ..API
 using ..LLVM
 using ..LLVM.Interop
 import Core: LLVMPtr
+import ..CBinding
+import ..CBinding: @c_str, Cptr
 include("runtime/maps_core.jl")
 include("runtime/bpfcall.jl")
 include("runtime/maps.jl")
 include("runtime/buffers.jl")
 include("runtime/helpers.jl")
 include("runtime/intrinsics.jl")
+include("runtime/constants.jl")
+include("runtime/utils.jl")
 end
 
 # Host API
@@ -94,6 +86,7 @@ include("reflection.jl")
 include("probes.jl")
 
 # Useful utilities
+include("extra.jl")
 include("xdp.jl")
 
 end # module
