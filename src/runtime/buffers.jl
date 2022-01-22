@@ -21,7 +21,12 @@ const BufPtr = Core.LLVMPtr{UInt8,0}
             # Allocate stack buffer
             malloc_ft = LLVM.FunctionType(T_pi8, [T_i64])
             malloc_f = LLVM.Function(mod, "malloc", malloc_ft)
-            buf_ptr = call!(builder, malloc_f, [ConstantInt(T_i64, N)])
+            buf_len = ConstantInt(T_i64, N)
+            buf_ptr = call!(builder, malloc_f, [buf_len])
+
+            # Zero-out buffer
+            zero_value = ConstantInt(T_i8, 0)
+            _memset!(builder, ctx, mod, buf_ptr, zero_value, buf_len, ConstantInt(LLVM.Int1Type(ctx), 0))
 
             ret!(builder, buf_ptr)
         end
