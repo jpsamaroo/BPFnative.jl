@@ -27,6 +27,16 @@ struct ProbeSet <: AbstractProbe
 end
 ProbeSet() = ProbeSet(AbstractProbe[])
 objects(p::ProbeSet) = vcat(map(objects, p.probes)...)
+function API.findmap(p::ProbeSet, name::String)
+    for obj in objects(p)
+        try
+            return API.findmap(obj, name)
+        catch err
+            err isa AssertionError || rethrow(err)
+        end
+    end
+    throw(ArgumentError("Failed to find map $name"))
+end
 
 struct KProbe <: AbstractProbe
     obj::API.Object
