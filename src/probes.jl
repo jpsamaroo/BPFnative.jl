@@ -56,7 +56,7 @@ KProbe(f::Function, kfunc; kwargs...) =
 
 const NOTE_ARG_TYPE = @NamedTuple{size::Int,
                                   signed::Bool,
-                                  reg::Symbol,
+                                  reg::Union{Symbol,Nothing},
                                   offset::Union{Int,Nothing}}
 const NOTE_TYPE = @NamedTuple{owner::String,
                               location::UInt64,
@@ -143,6 +143,10 @@ end
             end
         end
     else
+        if reg === nothing
+            # TODO: Broken argument, return garbage
+            return zero(T)
+        end
         return unsafe_load(reinterpret(Ptr{T}, getproperty(ptr, reg)))
     end
 end
@@ -191,20 +195,26 @@ function read_notes(bin)
             _args = split(_args, ' ')
             args = NOTE_ARG_TYPE[]
             for arg in _args
-                m = match(r"([\-0-9]*)@([\-_0-9a-z]*)\(?%([a-z]*[0-9]*)\)?", arg)
+                m = match(r"([\-0-9]*)@([$\-_0-9a-z]*)\(?%?([a-z]*[0-9]*)?\)?", arg)
                 if m !== nothing
                     sz, offset, reg = m.captures
                     sz = parse(Int, sz)
                     signed = sz < 0
                     sz = abs(sz)
-                    reg = Symbol(reg)
-                    if offset == ""
+                    if startswith(offset, '$')
+                        # TODO: Integer literal, what does this mean?
                         offset = nothing
+                        reg = nothing
                     else
-                        offset = try
-                            parse(Int, offset)
-                        catch
-                            0 # TODO: Is this right? This is probably PC-relative?
+                        reg = Symbol(reg)
+                        if offset == ""
+                            offset = nothing
+                        else
+                            offset = try
+                                parse(Int, offset)
+                            catch
+                                0 # TODO: Is this right? This is probably PC-relative?
+                            end
                         end
                     end
                     push!(args, (;size=sz, signed, reg, offset))
