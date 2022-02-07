@@ -38,10 +38,11 @@ Base.@kwdef struct perf_buffer_opts
 end
 
 function PerfBuffer{K,V}(map_fd::Cint, page_cnt::Integer, opts::perf_buffer_opts) where {K,V}
-    opts_ref = Ref{perf_buffer_opts}(opts)
+    opts_ref = ZeroInitRef(perf_buffer_opts, opts)
     buf = GC.@preserve opts_ref begin
         opts_ptr = Base.unsafe_convert(Ptr{perf_buffer_opts}, opts_ref)
         ccall((:perf_buffer__new, API.libbpf), perf_buffer, (Cint,Csize_t,Ptr{perf_buffer_opts}), map_fd, Csize_t(page_cnt), opts_ptr)
+        #ccall((:perf_buffer__new, API.libbpf), perf_buffer, (Cint,Csize_t,Ptr{Cvoid},Ptr{Cvoid},Ptr{Cvoid},Ptr{perf_buffer_opts}), map_fd, Csize_t(page_cnt), opts.sample_cb, opts.lost_cb, opts.ctx, opts_ptr)
     end
     @assert Int(buf) > 0
     PerfBuffer{K,V}(map_fd, buf)
