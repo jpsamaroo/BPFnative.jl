@@ -46,6 +46,7 @@ end
 include("utils.jl")
 include("common.jl")
 include("libbpf.jl")
+include("libcap.jl")
 if Sys.islinux()
 include("network.jl")
 end
